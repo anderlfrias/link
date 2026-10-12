@@ -1,6 +1,6 @@
-# LINK con Docker: PostgreSQL + backend + frontend. Ver README.md, sección "Docker".
+# LINK con Docker: PostgreSQL + backend + frontend. Ver README.md, sección "Inicio rápido con Docker".
 #
-#   cp .env.example .env     # completar las variables obligatorias
+#   npm run setup            # crea el .env y genera la contraseña de PostgreSQL, las claves VAPID y los secretos
 #   docker compose up -d --build
 #
 # Frontend: http://localhost:3000 · API: http://localhost:4000
@@ -11,7 +11,7 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-link}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env (ver .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env. Correr npm run setup (ver README.md)}
       POSTGRES_DB: ${POSTGRES_DB:-link}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -45,8 +45,8 @@ services:
       # con `env_file` o agregándolas acá).
       AUTH_PROVIDER_MODULE: ${AUTH_PROVIDER_MODULE:-}
       FILE_URL_SIGNING_SECRET: ${FILE_URL_SIGNING_SECRET:-}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?Falta VAPID_PUBLIC_KEY en .env (ver .env.example)}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?Falta VAPID_PRIVATE_KEY en .env (ver .env.example)}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?Falta VAPID_PUBLIC_KEY en .env. Correr npm run setup (ver README.md)}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?Falta VAPID_PRIVATE_KEY en .env. Correr npm run setup (ver README.md)}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       GIPHY_API_KEY: ${GIPHY_API_KEY:-}
       # Almacenamiento: LOCAL (volumen `uploads`) por defecto. S3 es opcional,

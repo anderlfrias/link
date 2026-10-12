@@ -124,5 +124,6 @@ El nombre **LINK**, el logotipo y los íconos asociados constituyen la identidad
   - `frontend/public/icons/` (íconos de aplicación y PWA)
   - `frontend/src/app/icon.png` y `frontend/src/app/apple-icon.png`
   - `frontend/public/chat-pattern-light.svg` y `frontend/public/chat-pattern-dark.svg` (patrón decorativo de fondo)
+  - `docs/images/` (capturas de la interfaz que ilustran el README: muestran el logotipo y el patrón de fondo, con datos de demostración)
 
 Cualquier bifurcación (*fork*) o redistribución de LINK con una denominación o identidad diferente debe reemplazar estos archivos y adaptar el componente `frontend/src/components/brand/Logo.tsx`.

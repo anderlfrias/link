@@ -1,6 +1,28 @@
-# LINK
+<p align="center">
+  <img src="frontend/public/brand/logo-mark.svg" alt="Logo de LINK" width="140">
+</p>
 
-Chat interno para equipos y organizaciones, pensado para instalarse en infraestructura propia.
+<h1 align="center">LINK</h1>
+
+<p align="center">
+  Chat interno para equipos y organizaciones, pensado para instalarse en infraestructura propia.
+</p>
+
+<p align="center">
+  <a href="#funcionalidades">Funcionalidades</a> ·
+  <a href="#inicio-rápido-con-docker">Instalación</a> ·
+  <a href="#desarrollo-local-sin-docker">Desarrollo</a> ·
+  <a href="#variables-de-entorno">Configuración</a> ·
+  <a href="#autenticación">Autenticación</a> ·
+  <a href="#contribuir-y-seguridad">Contribuir</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/link-chat.png" alt="LINK: la lista de conversaciones y, a la derecha, un grupo con respuestas, reacciones y una encuesta" width="900">
+  <br>
+  <sub>Captura con datos de demostración.</sub>
+</p>
+
 Monorepo con un backend en Express + Socket.IO + Prisma (PostgreSQL) y un frontend en Next.js.
 
 > **Autenticación:** LINK funciona con cuentas propias (modo local, sin dependencias externas) o
@@ -24,53 +46,119 @@ Monorepo con un backend en Express + Socket.IO + Prisma (PostgreSQL) y un fronte
 
 ## Requisitos
 
-- **Node.js** 24 (recomendado) o 22.12 o superior, con npm. La versión está fijada en `.nvmrc`.
-- **PostgreSQL** (probado con la 17).
-- **Docker** y Docker Compose, opcionales, para levantar todo con un comando.
-- Opcional: un servicio compatible con S3 (SeaweedFS, MinIO, AWS S3…) para el almacenamiento de
-  archivos.
+Depende de cómo se instale (ver [Inicio rápido con Docker](#inicio-rápido-con-docker) y
+[Desarrollo local](#desarrollo-local-sin-docker)):
+
+| | Con Docker | Sin Docker (desarrollo) |
+|---|---|---|
+| **Git** | Sí | Sí |
+| **Docker** con Docker Compose | Sí | No (opcional, para tener un PostgreSQL de prueba) |
+| **Node.js** 24 (recomendado) o 22.12 o superior, con npm (la versión está fijada en `.nvmrc`) | Solo para `npm run setup`, que también corre [dentro de un contenedor](#sin-nodejs-instalado) | Sí |
+| **PostgreSQL** (probado con la 17) | Lo incluye `docker-compose.yml` | Sí, propio o en un contenedor |
+
+Opcional en los dos casos: un servicio compatible con S3 (SeaweedFS, MinIO, AWS S3…) para el
+almacenamiento de archivos.
 
 ## Inicio rápido con Docker
 
-Levanta PostgreSQL, el backend y el frontend. Las migraciones de base de datos se aplican solas
-al arrancar el backend.
+La forma más simple de probar LINK o de instalarlo en un servidor: un solo `docker compose`
+levanta PostgreSQL, el backend y el frontend. Las migraciones de base de datos se aplican solas al
+arrancar el backend.
 
-```bash
-npm run setup
-```
+1. **Clonar el repositorio.**
 
-Crea `.env` a partir de `.env.example` y genera lo que hace falta para arrancar: la contraseña de
-PostgreSQL, las claves VAPID de las notificaciones push y los secretos de las sesiones y de las
-URLs de archivos. No necesita `npm ci`, nunca pisa un valor que ya esté en el archivo (se puede
-volver a correr sin riesgo) y no imprime ningún secreto. Con `--vapid-subject mailto:equipo@example.org`
-se reemplaza el contacto de las notificaciones push.
+   ```bash
+   git clone https://github.com/anderlfrias/link.git
+   cd link
+   ```
 
-Sin Node instalado, el mismo script corre dentro de un contenedor:
+2. **Generar la configuración.** Crea el `.env` con la contraseña de PostgreSQL, las claves de las
+   notificaciones push y los secretos ya generados: no hay que copiar ni editar nada a mano. (Qué
+   hace en detalle: [Qué hace `npm run setup`](#qué-hace-npm-run-setup). Sin Node.js instalado:
+   [Sin Node.js instalado](#sin-nodejs-instalado).)
+
+   ```bash
+   npm run setup
+   ```
+
+3. **Levantar LINK.** La primera vez construye las imágenes y tarda unos minutos.
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. **Crear el primer admin**, con el correo propio en lugar del de ejemplo. Es para el modo por
+   defecto, con cuentas propias; con un proveedor de autenticación externo no aplica (ver
+   [Con un proveedor de autenticación externo](#con-un-proveedor-de-autenticación-externo)).
+
+   ```bash
+   docker compose exec backend npm run auth:admin -- create-admin --email tu-correo@example.com
+   ```
+
+   El comando muestra una contraseña temporal **una sola vez**: copiarla antes de seguir.
+
+5. **Entrar.** Abrir <http://localhost:3000>, iniciar sesión con ese correo y la contraseña
+   temporal, y elegir una contraseña nueva (de 12 caracteres o más).
+
+Listo: el frontend queda en <http://localhost:3000> y la API en <http://localhost:4000> (Socket.IO
+en la misma URL). Desde el panel de administración, el admin crea las cuentas del resto del equipo
+y ajusta la configuración funcional. Si algo no anda, ver [Si algo falla](#si-algo-falla).
+
+### Qué hace `npm run setup`
+
+Crea `.env` a partir de `.env.example` y genera lo que hace falta para arrancar:
+
+| Variable | Qué es |
+|---|---|
+| `POSTGRES_PASSWORD` | Contraseña de PostgreSQL. |
+| `SESSION_JWT_SECRET` | Firma las sesiones de LINK, con cualquier proveedor de autenticación. |
+| `FILE_URL_SIGNING_SECRET` | Firma las URLs de descarga de archivos. |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Par de claves de las notificaciones push (Web Push). |
+
+No necesita `npm ci`, nunca pisa un valor que ya esté en el archivo (solo completa lo que está
+vacío, así que se puede volver a correr sin riesgo) y no imprime ningún secreto, solo los nombres
+de las variables que completó. Opciones, que se pasan después de `--` (por ejemplo,
+`npm run setup -- --dev`):
+
+| Opción | Efecto |
+|---|---|
+| `--vapid-subject mailto:equipo@example.org` | Reemplaza el contacto de ejemplo de las notificaciones push (un `mailto:` o una URL `https://`). |
+| `--dev` | Prepara los archivos para correr sin Docker (ver [Desarrollo local](#desarrollo-local-sin-docker)). |
+| `--help` | Muestra la ayuda. |
+
+### Sin Node.js instalado
+
+El mismo script corre dentro de un contenedor:
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work node:24-bookworm-slim node scripts/setup.js
 ```
 
-(En PowerShell, `${PWD}` en lugar de `"$PWD"`.)
+(En PowerShell, `${PWD}` en lugar de `"$PWD"`. En Linux, agregar `--user "$(id -u):$(id -g)"`: sin
+eso, el `.env` queda a nombre de root y `docker compose` no puede leerlo.)
 
-Si la instalación usa un proveedor de autenticación externo en lugar de cuentas propias (ver
-[Autenticación](#autenticación)), definir `AUTH_PROVIDER_MODULE` y las variables del proveedor en `.env`.
-`SESSION_JWT_SECRET` (que el script genera) se usa con cualquier proveedor.
+### Con un proveedor de autenticación externo
 
-```bash
-docker compose up -d --build
-```
+Si la instalación delega el login en un sistema de identidad externo en lugar de usar cuentas
+propias (ver [Autenticación](#autenticación)), definir `AUTH_PROVIDER_MODULE` y las variables del
+proveedor en el `.env` antes de levantar (paso 3). El paso 4 no aplica: las cuentas y sus roles
+(por ejemplo `admin`) vienen del proveedor. `SESSION_JWT_SECRET`, que el script genera, se usa con
+cualquier proveedor.
 
-- Frontend: <http://localhost:3000>
-- API: <http://localhost:4000> (Socket.IO en la misma URL)
+### Si algo falla
 
-En modo local, crear el primer admin (ver [Autenticación](#autenticación)):
+| Síntoma | Qué hacer |
+|---|---|
+| `docker compose` no se conecta con Docker (`failed to connect to the docker API`, `Cannot connect to the Docker daemon`) | Docker no está iniciado: abrir Docker Desktop (o iniciar el servicio `docker` en Linux) y repetir. |
+| `docker compose` dice `Falta POSTGRES_PASSWORD…` o `Falta VAPID_…` | No hay `.env` o está incompleto. Correr `npm run setup` en la raíz del repo. |
+| `npm run setup` dice que falta `.env.example` | El checkout está incompleto (por ejemplo, se copió la carpeta sin los archivos ocultos). Volver a clonar el repositorio. |
+| `npm run setup` avisa que `POSTGRES_PASSWORD` sigue en `change-me` | El `.env` ya existía (por ejemplo, copiado a mano) y el script no cambia solo una contraseña existente. Si todavía no se levantó LINK, borrar ese valor del `.env` y volver a correr el script. Si ya se levantó, no cambiarla: el volumen de PostgreSQL conserva la original. |
+| El backend no arranca o se reinicia una y otra vez | Mirar `docker compose logs backend`. Causas comunes: un `.env` incompleto o con claves VAPID inválidas, o una `POSTGRES_PASSWORD` cambiada después del primer arranque (el volumen `postgres-data` conserva la contraseña original). Volver al valor original o, si no hay datos que conservar, `docker compose down -v` y levantar de nuevo (**borra los datos**). |
+| El puerto 3000 o el 4000 ya está en uso | Cambiar `FRONTEND_PORT` o `BACKEND_PORT` en `.env`, actualizar `PUBLIC_API_URL`, `PUBLIC_SOCKET_URL` y `CORS_ORIGIN` con los puertos nuevos y volver a correr `docker compose up -d --build` (las URLs se embeben en el build del frontend). |
+| La interfaz carga pero no deja iniciar sesión (en la consola del navegador aparece un error de CORS) | `CORS_ORIGIN` tiene que ser el origen exacto con el que se abre el frontend: `http://localhost:3000` no equivale a `http://127.0.0.1:3000` ni a la IP de la máquina. Además, `PUBLIC_API_URL` y `PUBLIC_SOCKET_URL` tienen que ser alcanzables desde el navegador. Corregirlos en `.env` y reconstruir con `docker compose up -d --build`. |
+| Se perdió la contraseña temporal del admin | `docker compose exec backend npm run auth:admin -- reset-password --email tu-correo@example.com` genera otra (también sirve si el único admin olvidó la suya). |
 
-```bash
-docker compose exec backend npm run auth:admin -- create-admin --email admin@example.com
-```
-
-Notas:
+### Notas
 
 - Las URLs con las que el navegador llega a la API (`PUBLIC_API_URL`, `PUBLIC_SOCKET_URL`) se
   embeben en el build del frontend. Si se cambian los puertos o se publica detrás de un dominio,
@@ -86,22 +174,31 @@ Notas:
 - Los archivos subidos quedan en el volumen `uploads`, y la base de datos en `postgres-data`.
 - Ver logs: `docker compose logs -f backend`. Bajar todo: `docker compose down`. Bajar y
   **borrar los datos**: `docker compose down -v`.
+- **Actualizar.** `git pull` y `docker compose up -d --build`: el backend aplica las migraciones al
+  arrancar. Antes de actualizar una instalación existente, hacer un backup de la base (ver
+  [Base de datos y migraciones](#base-de-datos-y-migraciones)). El procedimiento completo está en
+  [VERSIONING.md](VERSIONING.md#paso-7-actualizar-una-instalación).
 
 ## Desarrollo local (sin Docker)
 
-1. Instalar dependencias. El `postinstall` del backend genera el cliente de Prisma:
+Para modificar el código. Hace falta Node.js y un PostgreSQL (ver [Requisitos](#requisitos)).
+
+1. **Clonar el repositorio e instalar las dependencias.** El `postinstall` del backend genera el
+   cliente de Prisma:
 
    ```bash
+   git clone https://github.com/anderlfrias/link.git
+   cd link
    npm ci
    ```
 
-2. Tener un PostgreSQL disponible. Por ejemplo, con Docker:
+2. **Tener un PostgreSQL disponible.** Por ejemplo, con Docker:
 
    ```bash
    docker run -d --name link-postgres -e POSTGRES_USER=link -e POSTGRES_PASSWORD=link -e POSTGRES_DB=link -p 5432:5432 postgres:17-alpine
    ```
 
-3. Configurar el entorno:
+3. **Generar la configuración:**
 
    ```bash
    npm run setup -- --dev
@@ -109,25 +206,29 @@ Notas:
 
    Crea `backend/.env` y `frontend/.env.local` a partir de sus `.env.example`, y genera en el del
    backend las claves VAPID y los secretos. El `DATABASE_URL` de ejemplo ya apunta al contenedor
-   del paso 2.
+   del paso 2: con otro servidor, ajustarlo en `backend/.env`.
 
-4. Aplicar las migraciones:
+4. **Aplicar las migraciones:**
 
    ```bash
    npm run db:migrate
    ```
 
-5. En modo local, crear el primer admin:
+5. **Crear el primer admin** (modo local), con el correo propio:
 
    ```bash
-   npm run auth:admin:dev --workspace=backend -- create-admin --email admin@example.com
+   npm run auth:admin:dev --workspace=backend -- create-admin --email tu-correo@example.com
    ```
 
-6. Levantar backend (puerto 4000) y frontend (puerto 3000) juntos:
+   Muestra una contraseña temporal **una sola vez**: copiarla.
+
+6. **Levantar backend (puerto 4000) y frontend (puerto 3000) juntos:**
 
    ```bash
    npm run dev
    ```
+
+   Abrir <http://localhost:3000> e iniciar sesión con ese correo y la contraseña temporal.
 
 ### Tests y build
 
@@ -139,7 +240,8 @@ npm run build                               # build de backend (tsc) y frontend 
 
 ## Variables de entorno
 
-Cada archivo `.env.example` documenta sus variables en detalle:
+Cada archivo `.env.example` documenta sus variables en detalle. `npm run setup` crea el archivo real
+a partir de cada uno (ver [Inicio rápido con Docker](#inicio-rápido-con-docker)) y genera los secretos:
 
 | Archivo | Para qué |
 |---|---|
@@ -284,7 +386,7 @@ diseño completo está en [`docs/design/LARGE_FILES_PLAN.md`](docs/design/LARGE_
 ├── frontend/                # Next.js (App Router)
 │   └── src/features/        # una carpeta por funcionalidad (api, components, hooks, types)
 ├── docs/design/             # documentos de diseño de cada iniciativa
-├── scripts/                 # sincronizar la versión y generar el sonido de notificación
+├── scripts/                 # npm run setup, sincronizar la versión y generar el sonido de notificación
 ├── docker-compose.yml
 └── ecosystem.config.js      # PM2 (producción sin Docker)
 ```
