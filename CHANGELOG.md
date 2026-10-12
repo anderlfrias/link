@@ -7,6 +7,10 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Cambiado
+- **README**: el inicio rápido con Docker y el desarrollo local pasan a pasos numerados, desde clonar el repositorio hasta el primer ingreso. Se agregan la tabla de requisitos por forma de instalación, el detalle de lo que genera `npm run setup`, una sección "Si algo falla" y cómo actualizar, además del logo y una captura de la interfaz (`docs/images/link-chat.png`, con datos de demostración).
+- `docker-compose.yml` y los `.env.example` indican `npm run setup` en lugar de copiar el archivo a mano, y el error de `docker compose` por una variable obligatoria sin definir también lo menciona.
+
 ## [2.0.0] - 2026-10-09
 
 ### Añadido
