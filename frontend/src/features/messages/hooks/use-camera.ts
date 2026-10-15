@@ -224,9 +224,37 @@ export function useCamera(): UseCameraReturn {
         return null;
       }
 
+      const videoWidth = videoElement.videoWidth;
+      const videoHeight = videoElement.videoHeight;
+      const displayWidth = videoElement.clientWidth || 0;
+      const displayHeight = videoElement.clientHeight || 0;
+
+      let sourceX = 0;
+      let sourceY = 0;
+      let sourceWidth = videoWidth;
+      let sourceHeight = videoHeight;
+
+      // Si el elemento de video se renderiza con dimensiones visibles (object-fit: cover),
+      // recortamos el canvas exactamente a la región visible de la previsualización (WYSIWYG),
+      // evitando capturar contenido extra que el usuario no vio en pantalla antes de disparar.
+      if (displayWidth > 0 && displayHeight > 0) {
+        const displayAspect = displayWidth / displayHeight;
+        const videoAspect = videoWidth / videoHeight;
+
+        if (displayAspect > videoAspect) {
+          // El visor es más ancho que el video: se recortan márgenes superior e inferior
+          sourceHeight = videoWidth / displayAspect;
+          sourceY = (videoHeight - sourceHeight) / 2;
+        } else if (displayAspect < videoAspect) {
+          // El visor es más alto/estrecho que el video: se recortan márgenes laterales
+          sourceWidth = videoHeight * displayAspect;
+          sourceX = (videoWidth - sourceWidth) / 2;
+        }
+      }
+
       const canvas = document.createElement("canvas");
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
+      canvas.width = Math.max(1, Math.round(sourceWidth));
+      canvas.height = Math.max(1, Math.round(sourceHeight));
       const ctx = canvas.getContext("2d");
 
       if (!ctx) return null;
@@ -237,7 +265,17 @@ export function useCamera(): UseCameraReturn {
         ctx.scale(-1, 1);
       }
 
-      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(
+        videoElement,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
 
       const blob = await new Promise<Blob | null>((resolve) => {
         if (canvas.toBlob) {
