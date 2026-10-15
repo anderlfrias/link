@@ -2,6 +2,7 @@
 
 import { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  IconAlertCircle,
   IconCamera,
   IconChartBar,
   IconCheck,
@@ -16,6 +17,7 @@ import {
   IconTrash,
   IconUser,
   IconVideo,
+  IconX,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { AttachmentErrorModal } from "@/features/messages/components/AttachmentErrorModal";
@@ -40,6 +42,7 @@ import { extractFilesFromClipboard } from "@/utils/clipboard";
 import { getActiveMentionQuery, type ActiveMentionQuery } from "@/utils/mention";
 import { clearDraft, getDraft, setDraft } from "@/features/messages/lib/draft-store";
 import { useTranslation } from "@/i18n";
+import { cn } from "@/utils/cn";
 import type { DirectoryUser } from "@/features/users/types/user.types";
 import type { ContactMessagePayload, CreatePollPayload, Message } from "@/features/messages/types/message.types";
 
@@ -89,6 +92,9 @@ const ATTACHMENT_OPTIONS: AttachmentOption[] = [
 // el cálculo de `scrollHeight` de acá abajo no lee ese valor del CSS.
 const TEXTAREA_MAX_HEIGHT_PX = 128;
 
+/** Límite máximo de caracteres por mensaje soportado por la aplicación y el backend. */
+export const MAX_MESSAGE_LENGTH = 4000;
+
 export function MessageInput({
   conversationId,
   onSend,
@@ -136,6 +142,7 @@ export function MessageInput({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isPollOpen, setIsPollOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [reactionsPickerOpen, setReactionsPickerOpen] = useState(false);
   const [importingGif, setImportingGif] = useState(false);
@@ -207,6 +214,7 @@ export function MessageInput({
     const cursorPos = event.target.selectionStart ?? nextValue.length;
     updateValueAndDraft(nextValue);
     setCursorPosition(cursorPos);
+    if (sendError) setSendError(null);
     const hasCandidates = Boolean(mentionCandidates && mentionCandidates.length > 0);
     const nextQuery = hasCandidates ? getActiveMentionQuery(nextValue, cursorPos) : null;
     setMentionQuery(nextQuery);
@@ -296,11 +304,23 @@ export function MessageInput({
 
   // §8.3: canSend deja de mirar isUploading global.
   // Permite enviar texto mientras los adjuntos suben, o enviar cuando al menos un adjunto está listo.
-  const canSend = (Boolean(value.trim()) || fileIds.length > 0) && !sending;
+  const isOverLimit = value.trim().length > MAX_MESSAGE_LENGTH;
+  const showCharCounter = value.length >= 3500;
+  const canSend = (Boolean(value.trim()) || fileIds.length > 0) && !sending && !isOverLimit;
 
   async function submit() {
-    if (!canSend) return;
+    if (!canSend) {
+      if (isOverLimit) {
+        setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+      }
+      return;
+    }
     const content = value.trim();
+    if (content.length > MAX_MESSAGE_LENGTH) {
+      setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+      return;
+    }
+    setSendError(null);
     const readyFileIds = [...fileIds];
     setSending(true);
     setValue("");
@@ -317,7 +337,8 @@ export function MessageInput({
       }
     } catch (err) {
       updateValueAndDraft(content);
-      throw err;
+      const msg = err instanceof Error ? err.message : "No se pudo enviar el mensaje. Verificá tu conexión.";
+      setSendError(msg);
     } finally {
       setSending(false);
     }
@@ -357,6 +378,10 @@ export function MessageInput({
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      if (isOverLimit) {
+        setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+        return;
+      }
       void submit();
     }
   }
@@ -505,6 +530,36 @@ export function MessageInput({
         </p>
       )}
       {gifError && <p className="px-4 pt-2 text-xs text-red-500">{gifError}</p>}
+      {sendError && (
+        <div
+          role="alert"
+          className="mx-3 mt-2 flex items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-600 dark:bg-red-500/20 dark:text-red-400 animate-in fade-in duration-150"
+        >
+          <IconAlertCircle size={15} className="shrink-0" />
+          <span className="flex-1">{sendError}</span>
+          <button
+            type="button"
+            onClick={() => setSendError(null)}
+            className="text-red-500 hover:text-red-700 dark:hover:text-red-300"
+            aria-label="Cerrar advertencia"
+          >
+            <IconX size={13} />
+          </button>
+        </div>
+      )}
+      {showCharCounter && (
+        <div
+          className={cn(
+            "text-right text-[11px] font-mono px-4 pt-1 select-none",
+            isOverLimit
+              ? "text-red-500 font-semibold"
+              : "text-neutral-400 dark:text-neutral-500",
+          )}
+          aria-live="polite"
+        >
+          {value.length} / {MAX_MESSAGE_LENGTH}
+        </div>
+      )}
       {recorder.status === "recording" ? (
         <div className="flex items-center gap-3 pl-3 pr-5 py-2.5">
           <button
