@@ -3,21 +3,23 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CameraCaptureModal } from "./CameraCaptureModal";
 
 describe("CameraCaptureModal", () => {
-  let mockTrack: { stop: ReturnType<typeof vi.fn> };
-  let mockStream: { getTracks: () => any[] };
+  let mockTrack: { stop: ReturnType<typeof vi.fn>; getSettings: ReturnType<typeof vi.fn> };
+  let mockStream: { getTracks: () => any[]; getVideoTracks: () => any[] };
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockTrack = { stop: vi.fn() };
+    mockTrack = { stop: vi.fn(), getSettings: vi.fn().mockReturnValue({}) };
     mockStream = {
       getTracks: () => [mockTrack],
+      getVideoTracks: () => [mockTrack],
     };
 
     Object.defineProperty(global.navigator, "mediaDevices", {
       writable: true,
       value: {
         getUserMedia: vi.fn().mockResolvedValue(mockStream),
+        enumerateDevices: vi.fn().mockResolvedValue([]),
       },
     });
 
@@ -148,7 +150,7 @@ describe("CameraCaptureModal", () => {
     await waitFor(() => {
       expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          video: expect.objectContaining({ facingMode: "environment" }),
+          video: expect.objectContaining({ facingMode: { ideal: "user" } }),
         }),
       );
     });

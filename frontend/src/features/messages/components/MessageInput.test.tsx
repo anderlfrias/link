@@ -851,6 +851,93 @@ describe("MessageInput", () => {
 
     expect(screen.getByRole("heading", { name: "Crear encuesta" })).toBeInTheDocument();
   });
+
+  it("bloquea el envío y muestra advertencia cuando el texto supera 4000 caracteres", () => {
+    const onSend = vi.fn();
+    render(
+      <MessageInput
+        conversationId="conv-1"
+        onSend={onSend}
+        onTyping={vi.fn()}
+        onStopTyping={vi.fn()}
+        attachmentsState={defaultAttachmentsState as any}
+        replyTo={null}
+        onCancelReply={vi.fn()}
+        currentUserId="current-u"
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje");
+    const longText = "a".repeat(4001);
+
+    fireEvent.change(textarea, { target: { value: longText } });
+
+    // Botón de enviar deshabilitado
+    const sendBtn = screen.getByRole("button", { name: "Enviar mensaje" });
+    expect(sendBtn).toBeDisabled();
+
+    // Intentar enviar mediante Enter
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("El mensaje excede el límite máximo de 4000 caracteres.");
+  });
+
+  it("muestra contador de caracteres al aproximarse al límite de 4000", () => {
+    render(
+      <MessageInput
+        conversationId="conv-1"
+        onSend={vi.fn()}
+        onTyping={vi.fn()}
+        onStopTyping={vi.fn()}
+        attachmentsState={defaultAttachmentsState as any}
+        replyTo={null}
+        onCancelReply={vi.fn()}
+        currentUserId="current-u"
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje");
+
+    // Con menos de 3500 no se muestra el contador
+    fireEvent.change(textarea, { target: { value: "a".repeat(3499) } });
+    expect(screen.queryByText(/3499 \/ 4000/)).not.toBeInTheDocument();
+
+    // Con 3500 o más se muestra
+    fireEvent.change(textarea, { target: { value: "a".repeat(3500) } });
+    expect(screen.getByText("3500 / 4000")).toBeInTheDocument();
+
+    // Al superar 4000 muestra clase de error
+    fireEvent.change(textarea, { target: { value: "a".repeat(4005) } });
+    const counter = screen.getByText("4005 / 4000");
+    expect(counter).toBeInTheDocument();
+    expect(counter).toHaveClass("text-red-500");
+  });
+
+  it("muestra mensaje de error cuando onSend falla y restaura el borrador", async () => {
+    const onSend = vi.fn().mockRejectedValue(new Error("Error de validación del servidor"));
+    render(
+      <MessageInput
+        conversationId="conv-1"
+        onSend={onSend}
+        onTyping={vi.fn()}
+        onStopTyping={vi.fn()}
+        attachmentsState={defaultAttachmentsState as any}
+        replyTo={null}
+        onCancelReply={vi.fn()}
+        currentUserId="current-u"
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje");
+    fireEvent.change(textarea, { target: { value: "Mensaje que fallará al enviar" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar mensaje" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Error de validación del servidor");
+    // El texto permanece en el textarea para que el usuario no lo pierda
+    expect(textarea).toHaveValue("Mensaje que fallará al enviar");
+  });
 });
 
 

@@ -59,6 +59,7 @@ import {
   buildContentDisposition,
   canAccessFile,
   deleteFile,
+  fixMultipartFilename,
   generateFileToken,
   getFile,
   getFileChecksum,
@@ -409,6 +410,54 @@ describe("file.service", () => {
         }),
       );
       expect(result.id).toBe(mockSaved.id);
+    });
+
+    it("normaliza nombres de archivo con caracteres especiales/tildes corruptos por multipart latin1", async () => {
+      vi.mocked(SettingsService.getSettings).mockResolvedValue(defaultSettings as any);
+      vi.mocked(isConversationMember).mockResolvedValue(true);
+
+      const mockSaved = buildMockStoredFile({
+        originalName: "diseño_evaluación.pdf",
+        mimeType: "application/pdf",
+        extension: "pdf",
+      });
+      vi.mocked(FileRepository.createStoredFile).mockResolvedValue(mockSaved as any);
+
+      // Simular byte stream UTF-8 que multer recibió y decodificó como Latin-1
+      const latin1Mangled = Buffer.from("diseño_evaluación.pdf", "utf8").toString("latin1");
+      const mangledUpload = {
+        originalname: latin1Mangled,
+        mimetype: "application/pdf",
+        buffer: Buffer.from("pdf-data"),
+        size: 8,
+      };
+
+      await uploadFile("u-1", mangledUpload, "conv-1");
+
+      expect(FileRepository.createStoredFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalName: "diseño_evaluación.pdf",
+          extension: "pdf",
+        }),
+      );
+    });
+  });
+
+  describe("fixMultipartFilename", () => {
+    it("restaura caracteres UTF-8 interpretados como Latin-1", () => {
+      const original = "informe_médico_año_2026_diseño.pdf";
+      const latin1Decoded = Buffer.from(original, "utf8").toString("latin1");
+      expect(fixMultipartFilename(latin1Decoded)).toBe(original);
+    });
+
+    it("respeta cadenas ASCII o UTF-8 limpias", () => {
+      expect(fixMultipartFilename("documento.txt")).toBe("documento.txt");
+      expect(fixMultipartFilename("archivo_sin_tildes.png")).toBe("archivo_sin_tildes.png");
+    });
+
+    it("retorna 'archivo' si el nombre viene vacío o solo espacios", () => {
+      expect(fixMultipartFilename("")).toBe("archivo");
+      expect(fixMultipartFilename("   ")).toBe("archivo");
     });
   });
 

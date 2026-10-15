@@ -214,7 +214,23 @@ export function toStoredFileResponse(file: StoredFile, currentUserId?: string): 
 /// — se valida acá, no en el `multer` de `file.route.ts` (ese solo aplica un
 /// techo de seguridad fijo, no editable). Cuando `kind === "voice_note"`,
 /// también se valida `AppSettings.maxVoiceNoteDurationSeconds` contra la
-/// duración real del audio (calculada acá, nunca confiada del cliente).
+/// Corrige la codificación de nombres de archivo recibidos por multipart/form-data.
+/// Multer (busboy) decodifica por defecto las cabeceras HTTP como ISO-8859-1 (latin1). Si el navegador
+/// envió bytes UTF-8 (acentos, eñes, diéresis, etc.), reinterpretar los bytes desde latin1 hacia
+/// utf8 restaura los caracteres originales sin corrupción (mojibake).
+export function fixMultipartFilename(rawName: string): string {
+  if (!rawName) return "archivo";
+  try {
+    const decoded = Buffer.from(rawName, "latin1").toString("utf8");
+    if (!decoded.includes("\uFFFD")) {
+      return decoded.trim() || "archivo";
+    }
+  } catch {
+    // Mantener original ante cualquier fallo de decodificación
+  }
+  return rawName.trim() || "archivo";
+}
+
 export async function uploadFile(
   currentUserId: string,
   upload: UploadedFile,
@@ -250,7 +266,8 @@ export async function uploadFile(
     }
   }
 
-  const extension = safeExtension(upload.originalname, upload.mimetype);
+  const normalizedOriginalName = fixMultipartFilename(upload.originalname);
+  const extension = safeExtension(normalizedOriginalName, upload.mimetype);
   const storedName = `${randomUUID()}.${extension}`;
   const checksum = createHash("sha256").update(upload.buffer).digest("hex");
 
@@ -258,7 +275,7 @@ export async function uploadFile(
   const saved = await writeStorage.save(upload.buffer, `${buildStorageDir(conversationId)}/${storedName}`);
 
   const file = await FileRepository.createStoredFile({
-    originalName: upload.originalname,
+    originalName: normalizedOriginalName,
     storedName,
     path: saved.path,
     mimeType: upload.mimetype,

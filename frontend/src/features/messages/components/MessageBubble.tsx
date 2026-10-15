@@ -430,12 +430,12 @@ export function MessageBubble({
           transform: swipeOffset > 0 ? `translateX(${swipeOffset}px)` : undefined,
           transition: isSwiping ? "none" : "transform 200ms ease-out",
         }}
-        className={cn("flex flex-col", renderAsOwn ? "items-end" : "items-start", "max-w-[75%]")}
+        className={cn("flex flex-col min-w-0", renderAsOwn ? "items-end" : "items-start", "max-w-[85%] sm:max-w-[75%]")}
       >
         <div
           ref={bubbleContainerRef}
           className={cn(
-            "group relative",
+            "group relative w-fit max-w-full min-w-0",
             isSticker
               ? "max-w-36"
               : cn(
@@ -652,7 +652,7 @@ export function MessageBubble({
         ) : (
           <>
             {hasAttachments && (
-              <div className={hasCaption ? "mb-1.5" : undefined}>
+              <div className={cn("w-full max-w-full min-w-0", hasCaption ? "mb-1.5" : undefined)}>
                 <MessageAttachments files={message.files} isOwn={renderAsOwn} />
               </div>
             )}

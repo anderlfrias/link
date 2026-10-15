@@ -20,3 +20,22 @@ export function isImageMimeType(mimeType: string): boolean {
 export function isAudioMimeType(mimeType: string): boolean {
   return mimeType.startsWith("audio/");
 }
+
+/**
+ * Corrige nombres de archivos que contengan caracteres mal interpretados (mojibake)
+ * debido a decodificación Latin-1 de cadenas UTF-8 en cargas de archivos previas.
+ */
+export function formatFileName(name: string): string {
+  if (!name) return "";
+  try {
+    // Si contiene secuencias típicas de UTF-8 interpretadas como Latin-1 (ej. Ã¡, Ã±, etc.)
+    if (/[\u00C2\u00C3][\u0080-\u00BF]/.test(name)) {
+      const bytes = new Uint8Array([...name].map((c) => c.charCodeAt(0)));
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      return decoder.decode(bytes);
+    }
+  } catch {
+    // Mantener original ante cualquier excepción
+  }
+  return name;
+}

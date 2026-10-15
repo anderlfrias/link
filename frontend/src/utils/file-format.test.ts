@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatFileSize, isAudioMimeType, isImageMimeType } from "./file-format";
+import { formatFileName, formatFileSize, isAudioMimeType, isImageMimeType } from "./file-format";
 
 describe("file-format", () => {
   describe("formatFileSize", () => {
@@ -44,6 +44,21 @@ describe("file-format", () => {
       expect(isAudioMimeType("audio/mpeg")).toBe(true);
       expect(isAudioMimeType("image/png")).toBe(false);
       expect(isAudioMimeType("application/json")).toBe(false);
+    });
+  });
+
+  describe("formatFileName", () => {
+    it("decodes mojibake caused by Latin-1 interpretation of UTF-8 filenames", () => {
+      // "diseño_evaluación.pdf" en UTF-8 interpretado byte a byte como Latin-1
+      expect(formatFileName("diseÃ±o_evaluaciÃ³n.pdf")).toBe("diseño_evaluación.pdf");
+      expect(formatFileName("canciÃ³n.mp3")).toBe("canción.mp3");
+      expect(formatFileName("aÃ±o_2026.docx")).toBe("año_2026.docx");
+    });
+
+    it("keeps normal clean filenames untouched", () => {
+      expect(formatFileName("documento_normal.pdf")).toBe("documento_normal.pdf");
+      expect(formatFileName("presentacion_final.pptx")).toBe("presentacion_final.pptx");
+      expect(formatFileName("")).toBe("");
     });
   });
 });
