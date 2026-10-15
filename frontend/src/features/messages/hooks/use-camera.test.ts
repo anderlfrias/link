@@ -9,9 +9,10 @@ describe("useCamera", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockTrack = { stop: vi.fn() };
+    mockTrack = { stop: vi.fn(), getSettings: vi.fn().mockReturnValue({}) };
     mockStream = {
       getTracks: () => [mockTrack],
+      getVideoTracks: () => [mockTrack],
     };
 
     // Mock navigator.mediaDevices
@@ -19,6 +20,10 @@ describe("useCamera", () => {
       writable: true,
       value: {
         getUserMedia: vi.fn().mockResolvedValue(mockStream),
+        enumerateDevices: vi.fn().mockResolvedValue([
+          { kind: "videoinput", deviceId: "cam-back-1", label: "Back Camera 1" },
+          { kind: "videoinput", deviceId: "cam-front-1", label: "Front Camera" },
+        ]),
       },
     });
 
@@ -39,6 +44,7 @@ describe("useCamera", () => {
     expect(result.current.error).toBeNull();
     expect(result.current.capturedBlob).toBeNull();
     expect(result.current.capturedUrl).toBeNull();
+    expect(result.current.facingMode).toBe("environment");
   });
 
   it("starts camera successfully and assigns stream", async () => {
@@ -50,7 +56,7 @@ describe("useCamera", () => {
 
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(
       expect.objectContaining({
-        video: expect.objectContaining({ facingMode: "user" }),
+        video: expect.objectContaining({ facingMode: { ideal: "user" } }),
       }),
     );
     expect(result.current.status).toBe("ready");
@@ -58,25 +64,41 @@ describe("useCamera", () => {
     expect(result.current.facingMode).toBe("user");
   });
 
-  it("switches camera between user and environment", async () => {
+  it("switches camera between multiple devices", async () => {
     const { result } = renderHook(() => useCamera());
 
     await act(async () => {
-      await result.current.startCamera("user");
+      await result.current.startCamera("environment", "cam-back-1");
     });
 
-    expect(result.current.facingMode).toBe("user");
+    expect(result.current.availableCameras.length).toBe(2);
+    expect(result.current.hasMultipleCameras).toBe(true);
 
     await act(async () => {
       await result.current.switchCamera();
     });
 
-    expect(result.current.facingMode).toBe("environment");
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        video: expect.objectContaining({ facingMode: "environment" }),
+        video: expect.objectContaining({ deviceId: { exact: "cam-front-1" } }),
       }),
     );
+  });
+
+  it("falls back gracefully when high resolution constraints fail", async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia)
+      .mockRejectedValueOnce(new Error("OverconstrainedError"))
+      .mockResolvedValueOnce(mockStream as any);
+
+    const { result } = renderHook(() => useCamera());
+
+    await act(async () => {
+      await result.current.startCamera("environment");
+    });
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("ready");
+    expect(result.current.stream).toBe(mockStream);
   });
 
   it("handles permission denied error", async () => {

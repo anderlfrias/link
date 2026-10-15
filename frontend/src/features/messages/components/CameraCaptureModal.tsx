@@ -29,6 +29,7 @@ export function CameraCaptureModal({
     stream,
     facingMode,
     capturedUrl,
+    hasMultipleCameras,
     startCamera,
     stopCamera,
     switchCamera,
@@ -42,7 +43,7 @@ export function CameraCaptureModal({
   // Iniciar cámara cuando el modal se abre, y apagarla al cerrarse
   useEffect(() => {
     if (open) {
-      void startCamera("user");
+      void startCamera();
     } else {
       stopCamera();
     }
