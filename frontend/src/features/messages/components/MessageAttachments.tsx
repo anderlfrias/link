@@ -22,7 +22,7 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
   if (files.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-1.5">
       {files.map(({ id, file }) => {
         // El archivo fue borrado físicamente desde el panel de admin — nunca
         // intentar renderizar imagen/audio/descarga para un mimetype que ya
@@ -33,13 +33,13 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
             <div
               key={id}
               className={cn(
-                "flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left",
+                "flex w-full max-w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left",
                 isOwn ? "border-white/25" : "border-black/10 dark:border-white/10",
               )}
             >
               <IconFileOff size={22} stroke={1.5} className="shrink-0 opacity-50" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium italic text-neutral-400 dark:text-neutral-500">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p className="truncate text-xs font-medium italic text-neutral-400 dark:text-neutral-500" title={file.originalName}>
                   {file.originalName}
                 </p>
                 <p className="text-[11px] italic text-neutral-400 dark:text-neutral-500">
@@ -59,7 +59,7 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
               type="button"
               onClick={() => openLightbox({ url, name: file.originalName })}
               aria-label={`Ver imagen ${file.originalName}`}
-              className="block w-full cursor-pointer overflow-hidden rounded-lg border-0 bg-transparent p-0"
+              className="block w-full max-w-full cursor-pointer overflow-hidden rounded-lg border-0 bg-transparent p-0"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -82,15 +82,15 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
             type="button"
             onClick={() => downloadFile(url, file.originalName)}
             className={cn(
-              "flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
+              "flex w-full max-w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
               isOwn
                 ? "border-white/25 hover:bg-white/10"
                 : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10",
             )}
           >
-            <FileTypeIcon mimeType={file.mimeType} size={22} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">{file.originalName}</p>
+            <FileTypeIcon mimeType={file.mimeType} size={22} className="shrink-0" />
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="truncate text-xs font-medium" title={file.originalName}>{file.originalName}</p>
               <p className={cn("text-[11px]", isOwn ? "text-white/70" : "text-neutral-400 dark:text-neutral-500")}>
                 {formatFileSize(file.size)}
               </p>

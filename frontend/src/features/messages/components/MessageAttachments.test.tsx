@@ -138,4 +138,32 @@ describe("MessageAttachments", () => {
       name: "foto.png",
     });
   });
+
+  it("handles very long filenames with flex containment and ellipsis", () => {
+    const veryLongName = "documento_de_prueba_con_nombre_extremadamente_largo_para_verificar_el_desbordamiento_del_chat_en_pantallas_moviles.pdf";
+    const files: MessageFile[] = [
+      {
+        id: "mf-long",
+        messageId: "m-1",
+        fileId: "f-long",
+        createdAt: "2026-09-09T10:00:00Z",
+        file: {
+          id: "f-long",
+          originalName: veryLongName,
+          mimeType: "application/pdf",
+          extension: "pdf",
+          size: 1048576,
+          deletedAt: null,
+        } as any,
+      },
+    ];
+
+    const { container } = render(<MessageAttachments files={files} isOwn={false} />);
+    const button = screen.getByRole("button");
+    expect(button).toHaveClass("w-full", "max-w-full", "min-w-0");
+    const titleEl = screen.getByText(veryLongName);
+    expect(titleEl).toHaveClass("truncate");
+    expect(titleEl).toHaveAttribute("title", veryLongName);
+    expect(container.firstChild).toHaveClass("min-w-0", "max-w-full");
+  });
 });
