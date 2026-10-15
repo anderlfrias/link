@@ -6,7 +6,7 @@ import { VoiceNotePlayer } from "@/features/messages/components/VoiceNotePlayer"
 import { useImageLightbox } from "@/features/messages/providers/image-lightbox-provider";
 import { resolveFileUrl } from "@/utils/file-url";
 import { downloadFile } from "@/utils/download-file";
-import { formatFileSize, isAudioMimeType, isImageMimeType } from "@/utils/file-format";
+import { formatFileName, formatFileSize, isAudioMimeType, isImageMimeType } from "@/utils/file-format";
 import { cn } from "@/utils/cn";
 import type { MessageFile } from "@/features/messages/types/message.types";
 
@@ -24,6 +24,8 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
   return (
     <div className="flex w-full max-w-full min-w-0 flex-col gap-1.5">
       {files.map(({ id, file }) => {
+        const displayName = formatFileName(file.originalName);
+
         // El archivo fue borrado físicamente desde el panel de admin — nunca
         // intentar renderizar imagen/audio/descarga para un mimetype que ya
         // no existe en el servidor, mismo criterio visual que "Mensaje
@@ -39,8 +41,8 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
             >
               <IconFileOff size={22} stroke={1.5} className="shrink-0 opacity-50" />
               <div className="min-w-0 flex-1 overflow-hidden">
-                <p className="truncate text-xs font-medium italic text-neutral-400 dark:text-neutral-500" title={file.originalName}>
-                  {file.originalName}
+                <p className="truncate text-xs font-medium italic text-neutral-400 dark:text-neutral-500" title={displayName}>
+                  {displayName}
                 </p>
                 <p className="text-[11px] italic text-neutral-400 dark:text-neutral-500">
                   Este archivo ya no está disponible: fue eliminado.
@@ -57,14 +59,14 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
             <button
               key={id}
               type="button"
-              onClick={() => openLightbox({ url, name: file.originalName })}
-              aria-label={`Ver imagen ${file.originalName}`}
+              onClick={() => openLightbox({ url, name: displayName })}
+              aria-label={`Ver imagen ${displayName}`}
               className="block w-full max-w-full cursor-pointer overflow-hidden rounded-lg border-0 bg-transparent p-0"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={url}
-                alt={file.originalName}
+                alt={displayName}
                 loading="eager"
                 className="max-h-64 min-h-[140px] w-full object-cover rounded-lg bg-black/5 dark:bg-white/5"
               />
@@ -73,14 +75,14 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
         }
 
         if (isAudioMimeType(file.mimeType)) {
-          return <VoiceNotePlayer key={id} url={url} filename={file.originalName} isOwn={isOwn} />;
+          return <VoiceNotePlayer key={id} url={url} filename={displayName} isOwn={isOwn} />;
         }
 
         return (
           <button
             key={id}
             type="button"
-            onClick={() => downloadFile(url, file.originalName)}
+            onClick={() => downloadFile(url, displayName)}
             className={cn(
               "flex w-full max-w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
               isOwn
@@ -90,7 +92,7 @@ export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
           >
             <FileTypeIcon mimeType={file.mimeType} size={22} className="shrink-0" />
             <div className="min-w-0 flex-1 overflow-hidden">
-              <p className="truncate text-xs font-medium" title={file.originalName}>{file.originalName}</p>
+              <p className="truncate text-xs font-medium" title={displayName}>{displayName}</p>
               <p className={cn("text-[11px]", isOwn ? "text-white/70" : "text-neutral-400 dark:text-neutral-500")}>
                 {formatFileSize(file.size)}
               </p>
