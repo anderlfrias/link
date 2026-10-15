@@ -3,8 +3,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CameraCaptureModal } from "./CameraCaptureModal";
 
 describe("CameraCaptureModal", () => {
-  let mockTrack: { stop: ReturnType<typeof vi.fn> };
-  let mockStream: { getTracks: () => any[] };
+  let mockTrack: { stop: ReturnType<typeof vi.fn>; getSettings: ReturnType<typeof vi.fn> };
+  let mockStream: { getTracks: () => any[]; getVideoTracks: () => any[] };
 
   beforeEach(() => {
     vi.clearAllMocks();
