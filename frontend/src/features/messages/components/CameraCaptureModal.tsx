@@ -91,11 +91,11 @@ export function CameraCaptureModal({
       role="dialog"
       aria-modal="true"
       aria-label="Cámara"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-black/80 p-0 sm:p-4 sm:backdrop-blur-sm animate-in fade-in duration-200"
     >
-      <div className="relative flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-neutral-900 text-white shadow-2xl">
+      <div className="relative flex h-[100dvh] w-full sm:h-auto sm:max-w-lg flex-col overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-white/10 bg-black sm:bg-neutral-900 text-white shadow-2xl">
         {/* Cabecera */}
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-neutral-950/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-2 font-medium text-sm">
             <IconCamera size={18} className="text-brand-blue" />
             <span>Tomar fotografía</span>
@@ -124,7 +124,7 @@ export function CameraCaptureModal({
         </div>
 
         {/* Visor de cámara / Foto congelada */}
-        <div className="relative aspect-[4/3] w-full overflow-hidden bg-black flex items-center justify-center">
+        <div className="relative flex-1 w-full min-h-0 sm:flex-none sm:aspect-[4/3] overflow-hidden bg-black flex items-center justify-center">
           {status === "requesting" && (
             <div className="flex flex-col items-center gap-2 text-neutral-400">
               <IconLoader2 size={32} className="animate-spin text-brand-blue" />
@@ -171,9 +171,9 @@ export function CameraCaptureModal({
         </div>
 
         {/* Barra de acciones inferior */}
-        <div className="flex items-center justify-center border-t border-white/10 bg-neutral-950/60 px-4 py-4">
+        <div className="flex items-center justify-center border-t border-white/10 bg-neutral-950/80 backdrop-blur-md px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0 z-10">
           {status === "ready" && (
-            <div className="flex items-center justify-center">
+            <div className="relative flex w-full items-center justify-center">
               <button
                 type="button"
                 onClick={() => void handleTakePicture()}
@@ -181,6 +181,16 @@ export function CameraCaptureModal({
                 className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20 p-1 shadow-lg transition-transform hover:scale-105 active:scale-95"
               >
                 <div className="h-full w-full rounded-full bg-white shadow" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void switchCamera()}
+                title="Cambiar cámara"
+                aria-label="Cambiar cámara inferior"
+                className="absolute right-2 sm:right-6 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white shadow backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95"
+              >
+                <IconRefresh size={20} />
               </button>
             </div>
           )}
@@ -191,7 +201,7 @@ export function CameraCaptureModal({
                 type="button"
                 onClick={() => void retake()}
                 aria-label="Repetir foto"
-                className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/20 hover:text-white"
+                className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/20 hover:text-white"
               >
                 <IconRefresh size={16} />
                 <span>Repetir</span>
@@ -200,7 +210,7 @@ export function CameraCaptureModal({
                 type="button"
                 onClick={handleConfirm}
                 aria-label="Usar foto"
-                className="flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2 text-sm font-medium text-white shadow transition-all hover:bg-brand-blue/90"
+                className="flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-medium text-white shadow transition-all hover:bg-brand-blue/90"
               >
                 <IconCheck size={16} />
                 <span>Usar foto</span>
