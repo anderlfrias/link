@@ -243,11 +243,12 @@ const socket = io("http://localhost:4000", {
 });
 
 socket.on("connect_error", (err) => {
-  // err.message: "Missing token" | "Invalid token" | "Token expired"
+  // err.message: "Missing token" | "Invalid token" | "Token expired" | "Server error"
 });
 ```
 
 - La conexión se autentica **una sola vez, en el handshake** (no hay un evento de "login" por socket). Si el token es inválido o expiró, la conexión falla directamente con `connect_error` — no llega a `connect`.
+- **`Server error` no es una sesión terminada**: el servidor no pudo resolver la cuenta (la base no respondió, por ejemplo) y lo dejó en su log. Solo `Invalid token` y `Token expired` significan que hay que iniciar sesión de nuevo. Como Socket.IO no reintenta solo cuando el servidor rechazó el handshake (`socket.active` queda en `false`), hay que llamar a `socket.connect()` de nuevo, con espera creciente; `socket-provider.tsx` lo hace de 2 a 30 s.
 - **El servidor corta el socket cuando vence el token** (`exp`): `socket.disconnect(true)`, y el cliente ve el evento `disconnect` con `reason === "io server disconnect"` (no reconecta solo). Es la misma razón con la que se cortan los sockets al desactivar la cuenta o revocar sus sesiones, así que significa que la sesión terminó. Se corta en el `exp` firmado, no antes: bajar `localSessionTtlHours` no acorta las conexiones que ya existen.
 - **Hay un límite de frecuencia de eventos por socket**: hasta 60 de golpe y una recarga de 20 por segundo. Lo que lo supera se descarta sin respuesta (un evento con callback no lo recibe) y el socket sigue conectado; no hay desconexión por abuso, así que un `io server disconnect` sigue significando siempre que la sesión terminó.
 - Reconectar (ej. tras perder la red) vuelve a mandar el mismo `auth.token` automáticamente (comportamiento default de socket.io-client) — si el token ya expiró para ese momento, hay que refrescarlo (re-loguear) antes de reconectar.
