@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { SocketProvider, useSocket } from "./socket-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -146,6 +146,107 @@ describe("SocketProvider and useSocket", () => {
     window.removeEventListener(SESSION_EXPIRED_EVENT, eventListener);
   });
 
+  describe("cuándo se reconecta", () => {
+    function authWith(session: ReturnType<typeof createMockSession> | null) {
+      vi.mocked(useAuth).mockReturnValue({
+        session,
+        status: session ? "authenticated" : "unauthenticated",
+        login: vi.fn(),
+        logout: vi.fn(),
+        updateSessionUser: vi.fn(),
+        expireSession: vi.fn(),
+        completePasswordChange: vi.fn(),
+      });
+    }
+
+    function buildSocket(connected = false) {
+      return { connected, on: vi.fn(), off: vi.fn() };
+    }
+
+    it("una session nueva con el mismo token (cambió el nombre, el idioma o el sonido) no reconecta", () => {
+      const session = createMockSession({ token: "mismo-token" });
+      const socket = buildSocket();
+      vi.mocked(connectSocket).mockReturnValue(socket as any);
+      authWith(session);
+      const { rerender } = render(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      authWith({ ...session, user: { ...session.user, fullName: "Otro nombre" } });
+      rerender(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      expect(connectSocket).toHaveBeenCalledTimes(1);
+      expect(disconnectSocket).not.toHaveBeenCalled();
+      expect(socket.off).not.toHaveBeenCalled();
+      expect(screen.getByTestId("has-socket").textContent).toBe("yes");
+    });
+
+    it("un token nuevo (cambió la contraseña) vuelve a conectar con el token nuevo", () => {
+      const first = buildSocket();
+      const second = buildSocket();
+      vi.mocked(connectSocket).mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
+      authWith(createMockSession({ token: "token-viejo" }));
+      const { rerender } = render(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      authWith(createMockSession({ token: "token-nuevo" }));
+      rerender(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      expect(connectSocket).toHaveBeenNthCalledWith(1, "token-viejo");
+      expect(connectSocket).toHaveBeenNthCalledWith(2, "token-nuevo");
+      // Los listeners de la conexión anterior se sueltan.
+      expect(first.off).toHaveBeenCalledWith("connect", expect.any(Function));
+    });
+
+    it("al cerrar la sesión desconecta y deja de ofrecer el socket", () => {
+      vi.mocked(connectSocket).mockReturnValue(buildSocket() as any);
+      authWith(createMockSession({ token: "token" }));
+      const { rerender } = render(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+      expect(screen.getByTestId("has-socket").textContent).toBe("yes");
+
+      authWith(null);
+      rerender(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      expect(disconnectSocket).toHaveBeenCalled();
+      expect(screen.getByTestId("has-socket").textContent).toBe("no");
+      expect(screen.getByTestId("connected").textContent).toBe("false");
+    });
+
+    it("si se reutiliza una conexión que ya estaba abierta, arranca como conectado", () => {
+      vi.mocked(connectSocket).mockReturnValue(buildSocket(true) as any);
+      authWith(createMockSession({ token: "token" }));
+
+      render(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+
+      expect(screen.getByTestId("connected").textContent).toBe("true");
+    });
+  });
+
   describe("desconexiones", () => {
     function renderWithSocket() {
       const handlers: Record<string, (...args: any[]) => void> = {};
@@ -208,5 +309,148 @@ describe("SocketProvider and useSocket", () => {
         window.removeEventListener(SESSION_EXPIRED_EVENT, eventListener);
       },
     );
+  });
+
+  describe("rechazo del handshake por una falla del servidor", () => {
+    function renderWithSocket(active: boolean) {
+      const handlers: Record<string, (...args: any[]) => void> = {};
+      const mockSocket = {
+        active,
+        connect: vi.fn(),
+        on: vi.fn((event: string, cb: (...args: any[]) => void) => {
+          handlers[event] = cb;
+        }),
+        off: vi.fn(),
+      };
+      vi.mocked(useAuth).mockReturnValue({
+        session: createMockSession({ token: "socket-auth-token" }),
+        status: "authenticated",
+        login: vi.fn(),
+        logout: vi.fn(),
+        updateSessionUser: vi.fn(),
+        expireSession: vi.fn(),
+        completePasswordChange: vi.fn(),
+      });
+      vi.mocked(connectSocket).mockReturnValue(mockSocket as any);
+
+      const view = render(
+        <SocketProvider>
+          <SocketConsumer />
+        </SocketProvider>,
+      );
+      return { handlers, mockSocket, ...view };
+    }
+
+    let eventListener: Mock<EventListener>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      eventListener = vi.fn<EventListener>();
+      window.addEventListener(SESSION_EXPIRED_EVENT, eventListener);
+    });
+
+    afterEach(() => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, eventListener);
+      vi.useRealTimers();
+    });
+
+    it("'Server error' no cierra la sesión y reconecta a mano con espera creciente", () => {
+      const { handlers, mockSocket } = renderWithSocket(false);
+
+      act(() => {
+        handlers["connect_error"]?.(new Error("Server error"));
+      });
+      expect(eventListener).not.toHaveBeenCalled();
+      expect(mockSocket.connect).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      expect(mockSocket.connect).toHaveBeenCalledTimes(1);
+
+      // Segundo fallo seguido: la espera se duplica.
+      act(() => {
+        handlers["connect_error"]?.(new Error("Server error"));
+      });
+      act(() => {
+        vi.advanceTimersByTime(3_999);
+      });
+      expect(mockSocket.connect).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(mockSocket.connect).toHaveBeenCalledTimes(2);
+      expect(eventListener).not.toHaveBeenCalled();
+    });
+
+    it("la espera tiene un tope de 30 s", () => {
+      const { handlers, mockSocket } = renderWithSocket(false);
+
+      const expectedDelays = [2_000, 4_000, 8_000, 16_000, 30_000, 30_000];
+
+      expectedDelays.forEach((delay, index) => {
+        act(() => {
+          handlers["connect_error"]?.(new Error("Server error"));
+        });
+        act(() => {
+          vi.advanceTimersByTime(delay - 1);
+        });
+        expect(mockSocket.connect).toHaveBeenCalledTimes(index);
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(mockSocket.connect).toHaveBeenCalledTimes(index + 1);
+      });
+    });
+
+    it("al conectar, la espera vuelve a empezar en 2 s", () => {
+      const { handlers, mockSocket } = renderWithSocket(false);
+
+      act(() => {
+        handlers["connect_error"]?.(new Error("Server error"));
+      });
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      act(() => {
+        handlers["connect"]?.();
+      });
+      act(() => {
+        handlers["connect_error"]?.(new Error("Server error"));
+      });
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+
+      expect(mockSocket.connect).toHaveBeenCalledTimes(2);
+    });
+
+    it("si Socket.IO ya está reintentando solo (active), no reconecta a mano", () => {
+      const { handlers, mockSocket } = renderWithSocket(true);
+
+      act(() => {
+        handlers["connect_error"]?.(new Error("xhr poll error"));
+      });
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(mockSocket.connect).not.toHaveBeenCalled();
+      expect(eventListener).not.toHaveBeenCalled();
+    });
+
+    it("al desmontar se cancela el reintento pendiente", () => {
+      const { handlers, mockSocket, unmount } = renderWithSocket(false);
+
+      act(() => {
+        handlers["connect_error"]?.(new Error("Server error"));
+      });
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(mockSocket.connect).not.toHaveBeenCalled();
+    });
   });
 });

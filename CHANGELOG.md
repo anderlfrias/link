@@ -7,6 +7,15 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Corregido
+- **Sesiones que se cerraban por una falla del servidor**: si la base de datos no respondía durante el handshake del socket (por ejemplo, al reiniciar el backend con muchos usuarios reconectando), el servidor respondía "token inválido" y el cliente cerraba la sesión. Ahora responde `Server error`, lo deja en el log y el cliente reintenta con espera creciente sin cerrar la sesión.
+
+- **Reconexión del socket al cambiar el perfil**: cambiar el nombre, el idioma o el sonido de notificación abría una conexión nueva con el servidor (con su consulta a la base) aunque la sesión fuera la misma. Ahora la conexión se reutiliza mientras el token no cambie.
+
+### Añadido
+- **Motivo del cierre de sesión en el log**: cada rechazo de un token (vencido, firma inválida, cuenta desactivada, sesión revocada o más vieja que la duración vigente) deja una línea `info` con el motivo, la edad del token y la duración con la que se emitió, y el UUID del usuario; nunca el token ni el correo.
+- El panel de configuración avisa, al subir la duración de la sesión, que no alarga las sesiones ya abiertas: cada usuario tiene que volver a iniciar sesión.
+
 ### Cambiado
 - **README**: el inicio rápido con Docker y el desarrollo local pasan a pasos numerados, desde clonar el repositorio hasta el primer ingreso. Se agregan la tabla de requisitos por forma de instalación, el detalle de lo que genera `npm run setup`, una sección "Si algo falla" y cómo actualizar, además del logo y una captura de la interfaz (`docs/images/link-chat.png`, con datos de demostración).
 - `docker-compose.yml` y los `.env.example` indican `npm run setup` en lugar de copiar el archivo a mano, y el error de `docker compose` por una variable obligatoria sin definir también lo menciona.

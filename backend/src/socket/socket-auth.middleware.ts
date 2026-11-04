@@ -1,4 +1,5 @@
-import { TokenExpiredError } from "jsonwebtoken";
+import { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
+import { getLogger } from "../config/request-context";
 import { authenticateAccessToken } from "../modules/auth/identity";
 import { AppError } from "../utils/errors";
 import { scheduleSessionExpiry } from "./session-expiry";
@@ -29,12 +30,20 @@ export const authenticateSocket: SocketMiddleware = (socket, next) => {
       next();
     })
     .catch((error) => {
-      // El frontend cierra la sesión ante estos dos mensajes
+      // El frontend cierra la sesión ante "Token expired" e "Invalid token"
       // (socket-provider.tsx). Una cuenta desactivada, un token revocado o un
       // cambio de contraseña pendiente también terminan la sesión del socket:
       // van como "Invalid token", igual que un usuario que no existe.
       const expired =
         error instanceof TokenExpiredError || (error instanceof AppError && error.code === "session_expired");
-      next(new Error(expired ? "Token expired" : "Invalid token"));
+      if (expired) return next(new Error("Token expired"));
+      if (error instanceof JsonWebTokenError || error instanceof AppError) return next(new Error("Invalid token"));
+
+      // Cualquier otra cosa es una falla nuestra (la base no responde, el pool
+      // se agotó), no una sesión inválida: con "Invalid token" el cliente
+      // cerraba la sesión de todos los que reconectaban durante un reinicio o un
+      // pico de carga. "Server error" le avisa que reintente.
+      getLogger().error({ err: error }, "socket handshake failed");
+      next(new Error("Server error"));
     });
 };

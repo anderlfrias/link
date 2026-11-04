@@ -450,6 +450,14 @@ describe("AdminSettingsPanel", () => {
       expect(screen.getByTestId("session-warnings")).toHaveTextContent("también cierra las sesiones abiertas");
     });
 
+    it("con un proveedor externo también advierte que subir la duración no alarga las sesiones abiertas", async () => {
+      const { user } = renderWith();
+
+      await replace(user, /Duración de la sesión/, "168");
+
+      expect(screen.getByTestId("session-warnings")).toHaveTextContent("no alarga las sesiones ya abiertas");
+    });
+
     it("con cuentas locales aparecen la sesión y las contraseñas, con los valores guardados", () => {
       mockProvider("local");
       renderWith({ ...defaultSettings, passwordMinLength: 14, passwordRequireSymbol: true, maxFailedLoginAttempts: 5 });
@@ -531,11 +539,22 @@ describe("AdminSettingsPanel", () => {
       mockProvider("local");
       const { user } = renderWith();
 
-      await replace(user, /Duración de la sesión/, "24");
-      expect(screen.queryByTestId("session-warnings")).not.toBeInTheDocument();
-
       await replace(user, /Duración de la sesión/, "4");
       expect(screen.getByText(/también cierra las sesiones abiertas/)).toBeInTheDocument();
+      expect(screen.queryByText(/no alarga las sesiones ya abiertas/)).not.toBeInTheDocument();
+    });
+
+    it("advierte que subir la duración no alarga las sesiones ya abiertas", async () => {
+      mockProvider("local");
+      const { user } = renderWith();
+
+      await replace(user, /Duración de la sesión/, "168");
+      expect(screen.getByTestId("session-warnings")).toHaveTextContent("no alarga las sesiones ya abiertas");
+      expect(screen.queryByText(/también cierra las sesiones abiertas/)).not.toBeInTheDocument();
+
+      // Volver al valor guardado quita el aviso.
+      await replace(user, /Duración de la sesión/, "12");
+      expect(screen.queryByTestId("session-warnings")).not.toBeInTheDocument();
     });
 
     it("advierte que endurecer la política se aplica en el próximo inicio de sesión", async () => {
