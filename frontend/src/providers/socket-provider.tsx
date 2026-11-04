@@ -13,6 +13,11 @@ interface SocketContextValue {
 
 const SocketContext = createContext<SocketContextValue>({ socket: null, connected: false });
 
+/// Espera entre reintentos manuales tras un rechazo del handshake que no fue de
+/// autenticación (ver `handleConnectError`): arranca en 2 s y se duplica hasta 30 s.
+const RECONNECT_BASE_MS = 2_000;
+const RECONNECT_MAX_MS = 30_000;
+
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -29,7 +34,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const nextSocket = connectSocket(session.token);
     setSocket(nextSocket);
 
-    const handleConnect = () => setConnected(true);
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let failedAttempts = 0;
+
+    const handleConnect = () => {
+      failedAttempts = 0;
+      setConnected(true);
+    };
     const handleDisconnect = (reason: string) => {
       setConnected(false);
       // El servidor cortó la conexión a propósito (`socket.disconnect(true)`): hoy solo lo
@@ -44,7 +55,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: err }));
         }
+        return;
       }
+      // Cualquier otro motivo (el servidor respondió "Server error" porque la base no
+      // contestaba) NO es una sesión terminada: no se cierra. Socket.IO no reintenta
+      // solo cuando el servidor rechazó el handshake (`active` queda en false), así
+      // que se reconecta a mano con espera creciente. Si `active` es true, el
+      // reintento automático ya está en marcha.
+      if (nextSocket.active || retryTimer) return;
+      const delay = Math.min(RECONNECT_BASE_MS * 2 ** failedAttempts, RECONNECT_MAX_MS);
+      failedAttempts += 1;
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        nextSocket.connect();
+      }, delay);
     };
 
     nextSocket.on("connect", handleConnect);
@@ -52,6 +76,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     nextSocket.on("connect_error", handleConnectError);
 
     return () => {
+      clearTimeout(retryTimer);
       nextSocket.off("connect", handleConnect);
       nextSocket.off("disconnect", handleDisconnect);
       nextSocket.off("connect_error", handleConnectError);
