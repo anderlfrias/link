@@ -326,17 +326,21 @@ function toPasswordPolicyPayload(draft: DraftState): UpdateAdminSettingsPayload 
   };
 }
 
-type SessionWarning = "ttlLoweredWarning";
+type SessionWarning = "ttlLoweredWarning" | "ttlRaisedWarning";
 type PasswordWarning = "policyHardenedWarning" | "expirationWarning";
 
 /** Efectos de D16 que el admin tiene que ver antes de guardar: bajar la
- * duración corta sesiones abiertas; endurecer la política o el vencimiento no
- * corta nada, pero pide cambiar la contraseña en el próximo login. */
+ * duración corta sesiones abiertas; subirla no alarga ninguna (cada token
+ * conserva el vencimiento con el que se emitió, así que hay que volver a
+ * iniciar sesión); endurecer la política o el vencimiento no corta nada, pero
+ * pide cambiar la contraseña en el próximo login. */
 function sessionWarnings(draft: DraftState, saved: DraftState): SessionWarning[] {
+  if (draft.localSessionTtlHours.trim() === "") return [];
   const ttl = Number(draft.localSessionTtlHours);
-  return draft.localSessionTtlHours.trim() !== "" && ttl < Number(saved.localSessionTtlHours)
-    ? ["ttlLoweredWarning"]
-    : [];
+  const savedTtl = Number(saved.localSessionTtlHours);
+  if (ttl < savedTtl) return ["ttlLoweredWarning"];
+  if (ttl > savedTtl) return ["ttlRaisedWarning"];
+  return [];
 }
 
 function passwordWarnings(draft: DraftState, saved: DraftState): PasswordWarning[] {

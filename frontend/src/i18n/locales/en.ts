@@ -542,6 +542,7 @@ export const en: TranslationSchema = {
       rangeError: "Must be a whole number between {min} and {max}.",
       optionalRangeError: "Must be a whole number between {min} and {max}, or empty.",
       ttlLoweredWarning: "Lowering the duration also closes open sessions that already exceed it.",
+      ttlRaisedWarning: "Raising the duration does not extend sessions that are already open: they keep the expiration they were started with, and each user has to sign in again for the new duration to apply.",
       policyHardenedWarning: "No session is closed: anyone whose password does not meet the new policy will have to change it the next time they sign in.",
       expirationWarning: "Passwords older than the expiration will have to be changed at the next sign-in.",
     },
