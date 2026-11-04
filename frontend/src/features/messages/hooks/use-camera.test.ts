@@ -203,4 +203,53 @@ describe("useCamera", () => {
     expect(result.current.capturedBlob).toBeNull();
     expect(result.current.capturedUrl).toBeNull();
   });
+
+  it("recorta la foto exactamente al encuadre visible (WYSIWYG) si el visor tiene distinta relación de aspecto que el sensor", async () => {
+    const { result } = renderHook(() => useCamera());
+
+    await act(async () => {
+      await result.current.startCamera("environment");
+    });
+
+    // Sensor de video horizontal 1920x1080 (16:9)
+    // Pero visor en móvil vertical de 360x640 (9:16)
+    const mockVideo = {
+      videoWidth: 1920,
+      videoHeight: 1080,
+      clientWidth: 360,
+      clientHeight: 640,
+    } as HTMLVideoElement;
+
+    const mockDrawImage = vi.fn();
+    const mockContext = {
+      translate: vi.fn(),
+      scale: vi.fn(),
+      drawImage: mockDrawImage,
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(mockContext as any);
+
+    const mockBlob = new Blob(["cropped-photo"], { type: "image/jpeg" });
+    HTMLCanvasElement.prototype.toBlob = vi.fn().mockImplementation((callback) => {
+      callback(mockBlob);
+    });
+
+    await act(async () => {
+      await result.current.capture(mockVideo);
+    });
+
+    // El aspect ratio del visor es 360/640 = 0.5625
+    // El aspect ratio del video es 1920/1080 = 1.777
+    // sourceWidth = 1080 * (360/640) = 607.5 -> 608px
+    // sourceX = (1920 - 607.5) / 2 = 656.25px
+    expect(mockDrawImage).toHaveBeenCalledTimes(1);
+    const [, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight] = mockDrawImage.mock.calls[0];
+    expect(Math.round(sWidth)).toBe(608);
+    expect(Math.round(sHeight)).toBe(1080);
+    expect(Math.round(sx)).toBe(656);
+    expect(sy).toBe(0);
+    expect(dx).toBe(0);
+    expect(dy).toBe(0);
+    expect(dWidth).toBe(608);
+    expect(dHeight).toBe(1080);
+  });
 });
