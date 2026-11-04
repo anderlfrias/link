@@ -30,6 +30,8 @@ export interface AcceptCallInput {
 export interface RejectCallInput {
   callId: string;
   reason?: "declined" | "busy";
+  /// Respuesta rápida opcional al rechazar ("No puedo hablar ahora...").
+  message?: string;
 }
 
 export interface SignalInput {

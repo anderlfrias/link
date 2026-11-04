@@ -1,5 +1,6 @@
 import * as yup from "yup";
 import { CallType } from "@prisma/client";
+import { CALL_REPLY_MAX_LENGTH } from "./call.constants";
 
 export const initiateCallSchema = yup.object({
   conversationId: yup.string().uuid("ID de conversación inválido").required("ID de conversación requerido"),
@@ -14,6 +15,13 @@ export const acceptCallSchema = yup.object({
 export const rejectCallSchema = yup.object({
   callId: yup.string().uuid("ID de llamada inválido").required("ID de llamada requerido"),
   reason: yup.string().oneOf(["declined", "busy"]).optional().default("declined"),
+  // Respuesta rápida con la que se rechaza ("No puedo hablar ahora..."): un texto
+  // corto, que sale como mensaje normal del receptor en la conversación.
+  message: yup
+    .string()
+    .trim()
+    .max(CALL_REPLY_MAX_LENGTH, `La respuesta puede tener como máximo ${CALL_REPLY_MAX_LENGTH} caracteres`)
+    .optional(),
 });
 
 /// Una oferta SDP con video ronda unos pocos KiB. Sin tope, el único límite es el
