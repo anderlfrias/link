@@ -16,6 +16,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 - Documentación del módulo de llamadas: `backend/src/modules/calls/README.md`.
 
 ### Cambiado
+- **Panel de administración reorganizado y adaptado a móvil**: la configuración global deja de ser un solo scroll y pasa a seis secciones agrupadas por tema (Mensajes, Grupos, Archivos adjuntos, Retención de datos, Almacenamiento y Seguridad), con la lista y el detalle lado a lado en escritorio y, en móvil, la lista de ajustes con navegación al detalle y flecha para volver, como en los ajustes de WhatsApp o Telegram. Un punto en la lista avisa qué sección tiene cambios sin guardar o errores, y un solo "Guardar cambios" cubre todas. La navegación del panel pasa a una barra de pestañas inferior en móvil, y las filas de Usuarios y Archivos ya no aplastan el nombre en pantallas angostas.
 - **README**: el inicio rápido con Docker y el desarrollo local pasan a pasos numerados, desde clonar el repositorio hasta el primer ingreso. Se agregan la tabla de requisitos por forma de instalación, el detalle de lo que genera `npm run setup`, una sección "Si algo falla" y cómo actualizar, además del logo y una captura de la interfaz (`docs/images/link-chat.png`, con datos de demostración).
 - `docker-compose.yml` y los `.env.example` indican `npm run setup` en lugar de copiar el archivo a mano, y el error de `docker compose` por una variable obligatoria sin definir también lo menciona.
 

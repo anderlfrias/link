@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@/i18n";
 import { AdminShell } from "./AdminShell";
 import { ForbiddenScreen } from "./ForbiddenScreen";
@@ -184,7 +185,7 @@ describe("Admin i18n support (English locale)", () => {
     expect(screen.getByRole("button", { name: "Delete permanently" })).toBeInTheDocument();
   });
 
-  it("renders AdminSettingsPanel with English section headers and labels", () => {
+  it("renders AdminSettingsPanel with English section list and group headers", async () => {
     mockUseAdminSettings.mockReturnValue({
       settings: mockSettings,
       status: "success",
@@ -192,6 +193,7 @@ describe("Admin i18n support (English locale)", () => {
       refetch: vi.fn(),
     });
 
+    const user = userEvent.setup();
     render(
       <I18nProvider initialLocale="en">
         <AdminSettingsPanel />
@@ -199,16 +201,36 @@ describe("Admin i18n support (English locale)", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Global Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "File Attachments" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "File Lifecycle and Cleanup" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Progressive S3 Migration (SeaweedFS)" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Private Conversations" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Voice Notes" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Groups" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Message Retention & Audit Trail" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Message Editing & Deletion" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "GIFs and Stickers" })).toBeInTheDocument();
+    for (const group of ["Communication", "Data & storage", "Access"]) {
+      expect(screen.getByText(group)).toBeInTheDocument();
+    }
+    for (const section of [
+      "Messages",
+      "Groups",
+      "File attachments",
+      "Data retention",
+      "Storage",
+      "Security",
+    ]) {
+      expect(screen.getByRole("button", { name: new RegExp(`^${section}`) })).toBeInTheDocument();
+    }
     expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+
+    // Cada sección, al abrirla, muestra sus bloques en inglés.
+    const headingsBySection: [string, string[]][] = [
+      ["Messages", ["Message Editing & Deletion", "GIFs and Stickers", "Voice Notes", "Private Conversations"]],
+      ["Groups", ["Creation & size", "Member permissions", "Group deletion"]],
+      ["File attachments", ["Limits", "File types"]],
+      ["Data retention", ["Audit"]],
+      ["Storage", ["File Lifecycle and Cleanup", "Progressive S3 Migration (SeaweedFS)"]],
+      ["Security", ["Session"]],
+    ];
+    for (const [section, headings] of headingsBySection) {
+      await user.click(screen.getByRole("button", { name: new RegExp(`^${section}`) }));
+      for (const heading of headings) {
+        expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+      }
+    }
   });
 
   it("renders AdminUsersPanel with English texts and search placeholder", () => {

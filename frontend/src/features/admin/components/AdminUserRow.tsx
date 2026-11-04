@@ -63,18 +63,21 @@ export function AdminUserRow({
 
   return (
     <div className="border-b border-black/5 px-1 py-2.5 last:border-0 dark:border-white/10">
-      <div className="flex items-center gap-3">
-        <Avatar name={user.name} imageUrl={getAvatarUrl(user)} size="md" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-brand-ink dark:text-white">
-            {user.name}
-            {user.username && <span className="text-neutral-400 dark:text-neutral-500"> · @{user.username}</span>}
-          </p>
-          <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-            {user.email} · {t("admin.users.since", { date: formattedDate })}
-          </p>
+      {/* Las etiquetas pasan a una segunda línea cuando no entran al lado del nombre (mobile), en vez de aplastarlo. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-56 items-center gap-3">
+          <Avatar name={user.name} imageUrl={getAvatarUrl(user)} size="md" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-brand-ink dark:text-white">
+              {user.name}
+              {user.username && <span className="text-neutral-400 dark:text-neutral-500"> · @{user.username}</span>}
+            </p>
+            <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+              {user.email} · {t("admin.users.since", { date: formattedDate })}
+            </p>
+          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+        <div className="flex flex-wrap gap-1 sm:justify-end">
           <span
             className={cn(
               BADGE,
