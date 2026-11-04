@@ -27,6 +27,8 @@ export const SOCKET_EVENTS = {
     incoming: "call:incoming",
     accept: "call:accept",
     accepted: "call:accepted",
+    answeredElsewhere: "call:answered-elsewhere",
+    sync: "call:sync",
     reject: "call:reject",
     rejected: "call:rejected",
     busy: "call:busy",

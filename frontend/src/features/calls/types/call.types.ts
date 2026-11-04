@@ -27,6 +27,21 @@ export interface Call {
   duration: number;
 }
 
+/**
+ * Por qué no se conectó una llamada que hice yo, para mostrárselo a quien llamó (el receptor tiene
+ * el registro en el chat). Lleva a quién se llamó para poder volver a llamar con un toque.
+ * - no-answer: nadie contestó en el tiempo de timbrado.
+ * - declined: la otra persona la rechazó.
+ * - busy: la otra persona ya estaba en una llamada.
+ */
+export interface CallOutcome {
+  kind: "no-answer" | "declined" | "busy";
+  conversationId: string;
+  receiverId: string;
+  receiverName: string;
+  type: CallType;
+}
+
 export interface CallContextValue {
   callState: CallState;
   activeCall: Call | null;
@@ -42,8 +57,12 @@ export interface CallContextValue {
   /** Dispositivo local faltante: la llamada sigue, pero sin mic y/o cámara propios. */
   mediaWarning: "no-mic" | "no-camera" | "no-devices" | null;
   startCall: (conversationId: string, receiverId: string, receiverName: string, type: CallType) => Promise<void>;
+  /** Resultado de la última llamada que hice y no se conectó, o null. Se limpia al llamar de nuevo. */
+  callOutcome: CallOutcome | null;
+  dismissCallOutcome: () => void;
   acceptCall: () => Promise<void>;
-  rejectCall: (reason?: "declined" | "busy") => Promise<void>;
+  /** `message`: respuesta rápida ("No puedo hablar ahora..."), que le llega al llamante como mensaje. */
+  rejectCall: (reason?: "declined" | "busy", message?: string) => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
   toggleVideo: () => void;

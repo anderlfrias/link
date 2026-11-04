@@ -9,6 +9,7 @@ import { startMessageRetentionWorker } from "./workers/message-retention.worker"
 import { startUploadCleanupWorker } from "./workers/upload-cleanup.worker";
 import { startFileMigrationWorker } from "./workers/file-migration.worker";
 import { startAuditRetentionWorker } from "./workers/audit-retention.worker";
+import { startCallRingTimeoutWorker } from "./workers/call-ring-timeout.worker";
 
 const PORT = env.PORT;
 
@@ -37,6 +38,7 @@ async function start() {
   startUploadCleanupWorker();
   startFileMigrationWorker();
   startAuditRetentionWorker();
+  startCallRingTimeoutWorker();
 
   // env.ts no puede loguearlos: cuando valida el .env todavía no existe el logger.
   envWarnings.forEach((warning) => logger.warn(warning));

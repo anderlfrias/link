@@ -73,6 +73,8 @@ Las funcionalidades de conversaciones/presencia no manejan nombres de room ni ll
 
 **La membresía solo se comprueba al unirse** (`conversation:join`). Por eso, cuando un usuario deja de ser miembro (lo quitan del grupo o sale), `removeMember` llama a `removeUserFromConversationRoom()`, que saca a todos sus sockets de la room (se resuelve por su room personal, que incluye todas sus pestañas): sin eso seguiría recibiendo los mensajes nuevos del grupo mientras su conexión siguiera abierta. Hoy es el único camino que revoca una membresía, y cualquier otro que se agregue tiene que hacer lo mismo.
 
+Cada socket además puede **llevar una llamada** (`socket.data.activeCallId`, ver [`calls`](../modules/calls/README.md)): solo la caída del socket que inició o aceptó una llamada la termina. Un usuario tiene un socket por pestaña, y la caída de uno que no participa no puede cortar ni rechazar la llamada de otro.
+
 ## Middleware
 
 `middleware.ts` expone `applyMiddlewares` y aplica los middlewares globales en orden:

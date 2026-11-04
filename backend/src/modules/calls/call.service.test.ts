@@ -1,6 +1,7 @@
 import { CallStatus, CallType } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors";
+import { CALL_RING_TIMEOUT_MS } from "./call.constants";
 import * as AuditService from "../audit/audit.service";
 import * as ConversationService from "../conversations/conversation.service";
 import * as MessageService from "../messages/message.service";
@@ -10,11 +11,16 @@ import {
   acceptCall,
   authorizeSignal,
   endCall,
+  expireRingingCall,
   formatDuration,
+  getPendingCall,
   initiateCall,
   rejectCall,
   toCallResponse,
 } from "./call.service";
+
+const logSpy = vi.hoisted(() => ({ warn: vi.fn() }));
+vi.mock("../../config/request-context", () => ({ getLogger: () => logSpy }));
 
 vi.mock("web-push", () => ({
   default: {
@@ -121,7 +127,10 @@ describe("call.service", () => {
           body: "Llamada de voz entrante",
           tag: `call-${callId}`,
           kind: "call",
+          ringMs: CALL_RING_TIMEOUT_MS,
         }),
+        // Sin TTL el push se guardaba 4 semanas y una llamada vieja aparecía horas después.
+        { ttlSeconds: CALL_RING_TIMEOUT_MS / 1000, urgency: "high" },
       );
     });
 
@@ -148,6 +157,7 @@ describe("call.service", () => {
       expect(PushService.notifyUsers).toHaveBeenCalledWith(
         [receiverId],
         expect.objectContaining({ body: "Videollamada entrante" }),
+        expect.any(Object),
       );
     });
 
@@ -270,6 +280,123 @@ describe("call.service", () => {
 
       await expect(acceptCall(receiverId, callId)).rejects.toThrow(BadRequestError);
     });
+
+    it("no acepta una llamada que sigue RINGING pero ya venció: el worker todavía no la pasó a perdida", async () => {
+      vi.mocked(CallRepository.findById).mockResolvedValue({
+        id: callId,
+        receiverId,
+        status: CallStatus.RINGING,
+        startedAt: new Date(Date.now() - CALL_RING_TIMEOUT_MS - 1_000),
+      } as any);
+
+      await expect(acceptCall(receiverId, callId)).rejects.toThrow(/ya no está disponible/);
+      expect(CallRepository.updateCallStatus).not.toHaveBeenCalled();
+    });
+
+    it("sí acepta una llamada que lleva casi todo el timeout sonando", async () => {
+      vi.mocked(CallRepository.findById).mockResolvedValue({
+        id: callId,
+        receiverId,
+        status: CallStatus.RINGING,
+        startedAt: new Date(Date.now() - CALL_RING_TIMEOUT_MS + 5_000),
+      } as any);
+      vi.mocked(CallRepository.updateCallStatus).mockResolvedValue({
+        id: callId,
+        status: CallStatus.ACCEPTED,
+        startedAt: new Date(),
+      } as any);
+
+      await expect(acceptCall(receiverId, callId)).resolves.toMatchObject({ status: CallStatus.ACCEPTED });
+    });
+  });
+
+  describe("getPendingCall", () => {
+    it("busca la llamada que suena desde hace menos del timeout y la devuelve serializada", async () => {
+      const startedAt = new Date();
+      vi.mocked(CallRepository.findRingingCallForUser).mockResolvedValue({
+        id: callId,
+        conversationId,
+        callerId,
+        receiverId,
+        type: CallType.AUDIO,
+        status: CallStatus.RINGING,
+        startedAt,
+        caller: { name: "Llamante" },
+        receiver: { name: "Receptor" },
+      } as any);
+
+      const before = Date.now();
+      const pending = await getPendingCall(receiverId);
+
+      const [userId, since] = vi.mocked(CallRepository.findRingingCallForUser).mock.calls[0];
+      expect(userId).toBe(receiverId);
+      expect(since.getTime()).toBeGreaterThanOrEqual(before - CALL_RING_TIMEOUT_MS);
+      expect(since.getTime()).toBeLessThanOrEqual(Date.now() - CALL_RING_TIMEOUT_MS);
+      expect(pending).toMatchObject({ id: callId, callerName: "Llamante", startedAt: startedAt.toISOString() });
+    });
+
+    it("devuelve null si no hay ninguna llamada sonando", async () => {
+      vi.mocked(CallRepository.findRingingCallForUser).mockResolvedValue(null);
+
+      await expect(getPendingCall(receiverId)).resolves.toBeNull();
+    });
+  });
+
+  describe("expireRingingCall", () => {
+    const ringingCall = {
+      id: callId,
+      callerId,
+      receiverId,
+      conversationId,
+      type: CallType.AUDIO,
+      status: CallStatus.MISSED,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      duration: 0,
+      caller: { name: "Llamante" },
+      receiver: { name: "Receptor" },
+    };
+
+    it("pasa la llamada a perdida, deja el registro en el chat y audita sin actor", async () => {
+      vi.mocked(CallRepository.markMissedIfRinging).mockResolvedValue(true);
+      vi.mocked(CallRepository.findById).mockResolvedValue(ringingCall as any);
+
+      const result = await expireRingingCall(callId);
+
+      expect(CallRepository.markMissedIfRinging).toHaveBeenCalledWith(callId, expect.any(Date));
+      expect(MessageService.sendCallRecordMessage).toHaveBeenCalledWith(
+        callerId,
+        conversationId,
+        "📞 Llamada de voz perdida",
+      );
+      const audit = vi.mocked(AuditService.record).mock.calls[0][0] as any;
+      expect(audit).toMatchObject({
+        targetId: callId,
+        metadata: { callType: CallType.AUDIO, duration: 0, status: CallStatus.MISSED },
+      });
+      // La hizo el sistema, no una persona: sin `userId` (cae al del contexto, que en un worker es nulo).
+      expect(audit).not.toHaveProperty("userId");
+      expect(result).toMatchObject({ id: callId, status: CallStatus.MISSED });
+    });
+
+    it("una videollamada deja el registro de videollamada perdida", async () => {
+      vi.mocked(CallRepository.markMissedIfRinging).mockResolvedValue(true);
+      vi.mocked(CallRepository.findById).mockResolvedValue({ ...ringingCall, type: CallType.VIDEO } as any);
+
+      await expireRingingCall(callId);
+
+      expect(MessageService.sendCallRecordMessage).toHaveBeenCalledWith(callerId, conversationId, "📹 Videollamada perdida");
+    });
+
+    it("si alguien la atendió justo antes no la pisa, ni deja registro, ni audita", async () => {
+      vi.mocked(CallRepository.markMissedIfRinging).mockResolvedValue(false);
+
+      await expect(expireRingingCall(callId)).resolves.toBeNull();
+
+      expect(CallRepository.findById).not.toHaveBeenCalled();
+      expect(MessageService.sendCallRecordMessage).not.toHaveBeenCalled();
+      expect(AuditService.record).not.toHaveBeenCalled();
+    });
   });
 
   describe("rejectCall", () => {
@@ -335,6 +462,101 @@ describe("call.service", () => {
         conversationId,
         "📹 Videollamada rechazada",
       );
+    });
+
+    describe("con respuesta rápida", () => {
+      function mockRinging(status: CallStatus) {
+        vi.mocked(CallRepository.findById).mockResolvedValue({
+          id: callId,
+          callerId,
+          receiverId,
+          conversationId,
+          type: CallType.AUDIO,
+          status: CallStatus.RINGING,
+          startedAt: new Date(),
+        } as any);
+        vi.mocked(CallRepository.updateCallStatus).mockResolvedValue({
+          id: callId,
+          callerId,
+          receiverId,
+          conversationId,
+          type: CallType.AUDIO,
+          status,
+          startedAt: new Date(),
+          endedAt: new Date(),
+          duration: 0,
+        } as any);
+      }
+
+      it("al rechazar el receptor, la respuesta sale como mensaje suyo después del registro de la llamada", async () => {
+        mockRinging(CallStatus.REJECTED);
+
+        await rejectCall(receiverId, callId, "declined", "No puedo hablar ahora.");
+
+        expect(MessageService.sendMessage).toHaveBeenCalledWith(receiverId, conversationId, {
+          content: "No puedo hablar ahora.",
+        });
+        const recordOrder = vi.mocked(MessageService.sendCallRecordMessage).mock.invocationCallOrder[0];
+        const replyOrder = vi.mocked(MessageService.sendMessage).mock.invocationCallOrder[0];
+        expect(replyOrder).toBeGreaterThan(recordOrder);
+      });
+
+      it("no manda nada sin respuesta o con una vacía", async () => {
+        mockRinging(CallStatus.REJECTED);
+
+        await rejectCall(receiverId, callId, "declined");
+        await rejectCall(receiverId, callId, "declined", "");
+
+        expect(MessageService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("si cancela el llamante no se manda ninguna respuesta aunque venga una", async () => {
+        mockRinging(CallStatus.MISSED);
+
+        await rejectCall(callerId, callId, "declined", "texto");
+
+        expect(MessageService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("si rechaza por ocupado no se manda ninguna respuesta", async () => {
+        mockRinging(CallStatus.BUSY);
+
+        await rejectCall(receiverId, callId, "busy", "texto");
+
+        expect(MessageService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("si la llamada ya no suena no se manda la respuesta", async () => {
+        vi.mocked(CallRepository.findById).mockResolvedValue({
+          id: callId,
+          callerId,
+          receiverId,
+          conversationId,
+          type: CallType.AUDIO,
+          status: CallStatus.MISSED,
+        } as any);
+
+        await rejectCall(receiverId, callId, "declined", "texto");
+
+        expect(MessageService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("un fallo al enviar la respuesta no deshace el rechazo y no deja el texto en el log", async () => {
+        mockRinging(CallStatus.REJECTED);
+        vi.mocked(MessageService.sendMessage).mockRejectedValue(
+          new Error('Invalid `prisma.message.create()` invocation: content: "No puedo hablar ahora, estoy en una reunión"'),
+        );
+
+        const result = await rejectCall(receiverId, callId, "declined", "No puedo hablar ahora, estoy en una reunión");
+
+        expect(result.status).toBe(CallStatus.REJECTED);
+        expect(logSpy.warn).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(logSpy.warn.mock.calls)).not.toContain("reunión");
+        expect(logSpy.warn).toHaveBeenCalledWith(
+          { userId: receiverId, conversationId, reason: "unexpected error" },
+          "could not send call decline reply",
+        );
+      });
     });
   });
 

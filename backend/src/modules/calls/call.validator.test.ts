@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CALL_REPLY_MAX_LENGTH } from "./call.constants";
 import {
   MAX_SIGNAL_BYTES,
   acceptCallSchema,
@@ -78,6 +79,37 @@ describe("call.validator", () => {
           reason: "no_me_gusta",
         }),
       ).rejects.toThrow();
+    });
+
+    describe("respuesta rápida (message)", () => {
+      const callId = "550e8400-e29b-41d4-a716-446655440000";
+
+      it("es opcional", async () => {
+        const valid = await rejectCallSchema.validate({ callId });
+
+        expect(valid.message).toBeUndefined();
+      });
+
+      it("se recorta y acepta hasta el largo máximo", async () => {
+        const valid = await rejectCallSchema.validate({ callId, message: "  No puedo hablar ahora.  " });
+        expect(valid.message).toBe("No puedo hablar ahora.");
+
+        await expect(
+          rejectCallSchema.validate({ callId, message: "x".repeat(CALL_REPLY_MAX_LENGTH) }),
+        ).resolves.toBeDefined();
+      });
+
+      it("rechaza una respuesta más larga que el máximo, diciendo cuál es", async () => {
+        await expect(
+          rejectCallSchema.validate({ callId, message: "x".repeat(CALL_REPLY_MAX_LENGTH + 1) }),
+        ).rejects.toThrow(String(CALL_REPLY_MAX_LENGTH));
+      });
+
+      it("una respuesta de solo espacios queda vacía, que el servicio trata como ninguna", async () => {
+        const valid = await rejectCallSchema.validate({ callId, message: "    " });
+
+        expect(valid.message).toBe("");
+      });
     });
   });
 

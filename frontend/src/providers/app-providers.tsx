@@ -10,6 +10,7 @@ import { I18nProvider } from "@/i18n";
 import { CallProvider } from "@/features/calls/context/CallContext";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { ActiveCallOverlay } from "@/features/calls/components/ActiveCallOverlay";
+import { CallOutcomeToast } from "@/features/calls/components/CallOutcomeToast";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -24,6 +25,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
                     {children}
                     <IncomingCallModal />
                     <ActiveCallOverlay />
+                    <CallOutcomeToast />
                   </CallProvider>
                 </SocketProvider>
               </PublicSettingsProvider>

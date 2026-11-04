@@ -3,7 +3,9 @@ import { assertMembership } from "../conversations/conversation.service";
 import * as ConversationRepository from "../conversations/conversation.repository";
 import * as AuditService from "../audit/audit.service";
 import * as PushService from "../push/push.service";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors";
+import { getLogger } from "../../config/request-context";
+import { AppError, BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors";
+import { CALL_RING_TIMEOUT_MS } from "./call.constants";
 import * as CallRepository from "./call.repository";
 import { CallResponse, InitiateCallInput } from "./call.types";
 
@@ -11,6 +13,27 @@ async function sendCallChatMessage(senderId: string, conversationId: string, con
   // Import dinámico: evita el ciclo de módulos entre llamadas y mensajes.
   const { sendCallRecordMessage } = await import("../messages/message.service");
   await sendCallRecordMessage(senderId, conversationId, content);
+}
+
+/// La respuesta rápida con la que el receptor rechazó la llamada ("No puedo
+/// hablar ahora...") sale como un mensaje normal suyo en la conversación, igual
+/// que si lo hubiera escrito: lo ve el llamante, le llega por push si no está
+/// conectado y respeta todas las reglas de un mensaje. Nunca tira: el rechazo ya
+/// está hecho. Nunca se loguea el texto (LOGGING_PLAN.md §4.1).
+async function sendDeclineReply(userId: string, conversationId: string, content: string): Promise<void> {
+  try {
+    const { sendMessage } = await import("../messages/message.service");
+    await sendMessage(userId, conversationId, { content });
+  } catch (error) {
+    getLogger().warn(
+      { userId, conversationId, reason: error instanceof AppError ? error.message : "unexpected error" },
+      "could not send call decline reply",
+    );
+  }
+}
+
+function missedCallContent(type: CallType): string {
+  return type === CallType.VIDEO ? "📹 Videollamada perdida" : "📞 Llamada de voz perdida";
 }
 
 export function formatDuration(seconds: number): string {
@@ -40,13 +63,21 @@ export function toCallResponse(call: any): CallResponse {
 /// Nunca lanza ni se espera: un push caído no debe impedir que la llamada se inicie.
 async function pushIncomingCall(call: any, type: CallType): Promise<void> {
   try {
-    await PushService.notifyUsers([call.receiverId], {
-      title: call.caller?.name ?? "Llamada entrante",
-      body: type === CallType.VIDEO ? "Videollamada entrante" : "Llamada de voz entrante",
-      url: `/conversations/${call.conversationId}`,
-      tag: `call-${call.id}`,
-      kind: "call",
-    });
+    await PushService.notifyUsers(
+      [call.receiverId],
+      {
+        title: call.caller?.name ?? "Llamada entrante",
+        body: type === CallType.VIDEO ? "Videollamada entrante" : "Llamada de voz entrante",
+        url: `/conversations/${call.conversationId}`,
+        tag: `call-${call.id}`,
+        kind: "call",
+        ringMs: CALL_RING_TIMEOUT_MS,
+      },
+      // Una llamada vieja no sirve: sin TTL, el servicio push guardaba el aviso
+      // hasta 4 semanas y un dispositivo sin conexión lo mostraba al volver, horas
+      // después de que la llamada terminó. "high" para que llegue de inmediato.
+      { ttlSeconds: CALL_RING_TIMEOUT_MS / 1000, urgency: "high" },
+    );
   } catch {
     // ignorado a propósito (ver comentario de la función)
   }
@@ -134,6 +165,12 @@ export async function acceptCall(userId: string, callId: string): Promise<CallRe
     throw new BadRequestError("La llamada ya no está disponible");
   }
 
+  // Sigue `RINGING` pero ya venció: el worker todavía no la pasó a perdida (corre
+  // cada pocos segundos). Aceptarla dejaría a la persona hablando con nadie.
+  if (Date.now() - call.startedAt.getTime() > CALL_RING_TIMEOUT_MS) {
+    throw new BadRequestError("La llamada ya no está disponible");
+  }
+
   const updated = await CallRepository.updateCallStatus(callId, CallStatus.ACCEPTED, {
     answeredAt: new Date(),
   });
@@ -145,6 +182,10 @@ export async function rejectCall(
   userId: string,
   callId: string,
   reason: "declined" | "busy" = "declined",
+  /// Respuesta rápida opcional ("No puedo hablar ahora..."): solo vale cuando el
+  /// receptor rechaza de verdad (`declined`), no cuando cancela el llamante ni
+  /// cuando la rechaza por ocupado.
+  replyMessage?: string,
 ): Promise<CallResponse> {
   const call = await CallRepository.findById(callId);
   if (!call) {
@@ -175,7 +216,7 @@ export async function rejectCall(
   // Mensaje en el chat informando el estado
   let content = "";
   if (status === CallStatus.MISSED) {
-    content = call.type === CallType.VIDEO ? "📹 Videollamada perdida" : "📞 Llamada de voz perdida";
+    content = missedCallContent(call.type);
   } else if (status === CallStatus.BUSY) {
     content =
       call.type === CallType.VIDEO
@@ -201,7 +242,52 @@ export async function rejectCall(
     },
   });
 
+  // Después del registro de la llamada, para que en el chat quede primero
+  // "Llamada rechazada" y debajo lo que el receptor quiso decir.
+  if (status === CallStatus.REJECTED && replyMessage) {
+    await sendDeclineReply(userId, call.conversationId, replyMessage);
+  }
+
   return toCallResponse(updated);
+}
+
+/// La llamada que suena ahora mismo para el usuario (como llamante o receptor),
+/// o `null`. Es lo que se le muestra al abrir la app o al recuperar la conexión:
+/// los eventos de `call:incoming` solo llegan a quien está conectado en el
+/// momento de llamar, y quien entra por la notificación llega tarde a eso.
+export async function getPendingCall(userId: string): Promise<CallResponse | null> {
+  const since = new Date(Date.now() - CALL_RING_TIMEOUT_MS);
+  const call = await CallRepository.findRingingCallForUser(userId, since);
+  return call ? toCallResponse(call) : null;
+}
+
+/// Da por no contestada una llamada que siguió sonando más allá del timeout.
+/// Devuelve `null` si ya no estaba sonando (la aceptaron, la rechazaron o la
+/// canceló el llamante un instante antes). El cambio de estado es condicional:
+/// nunca pisa una llamada que alguien acaba de aceptar. No lleva `userId` en la
+/// auditoría porque no la hizo nadie: es el sistema.
+export async function expireRingingCall(callId: string): Promise<CallResponse | null> {
+  const claimed = await CallRepository.markMissedIfRinging(callId, new Date());
+  if (!claimed) return null;
+
+  const call = await CallRepository.findById(callId);
+  if (!call) return null;
+
+  await sendCallChatMessage(call.callerId, call.conversationId, missedCallContent(call.type));
+
+  void AuditService.record({
+    action: AuditAction.END_CALL,
+    conversationId: call.conversationId,
+    targetType: "call",
+    targetId: call.id,
+    metadata: {
+      callType: call.type,
+      duration: 0,
+      status: CallStatus.MISSED,
+    },
+  });
+
+  return toCallResponse(call);
 }
 
 export async function endCall(userId: string, callId: string): Promise<CallResponse> {

@@ -20,6 +20,19 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 - **README**: el inicio rápido con Docker y el desarrollo local pasan a pasos numerados, desde clonar el repositorio hasta el primer ingreso. Se agregan la tabla de requisitos por forma de instalación, el detalle de lo que genera `npm run setup`, una sección "Si algo falla" y cómo actualizar, además del logo y una captura de la interfaz (`docs/images/link-chat.png`, con datos de demostración).
 - `docker-compose.yml` y los `.env.example` indican `npm run setup` en lugar de copiar el archivo a mano, y el error de `docker compose` por una variable obligatoria sin definir también lo menciona.
 
+### Añadido
+- **Llamada que suena al abrir la app**: quien recibe una llamada con la app cerrada ya no ve solo una notificación. Al abrir la app (o al recuperar la conexión, o al volver a la pestaña) aparece la llamada para contestarla o rechazarla, mientras siga sonando.
+- **Rechazar con una respuesta rápida**: en la llamada entrante, "Responder con un mensaje" ofrece cuatro respuestas ("No puedo hablar ahora. ¿Qué necesitas?", "Te devuelvo la llamada enseguida."...) o una propia de hasta 200 caracteres. Rechaza la llamada y le llega a quien llamó como mensaje del chat.
+- **Llamada sin respuesta**: una llamada que nadie contesta en 45 segundos pasa a perdida. Quien llamó ve "no contestó" (o "rechazó la llamada", u "ocupado") con un botón para volver a llamar, y quien debía contestar tiene el registro de la llamada perdida en el chat y su notificación.
+- Documentación del módulo de llamadas: `backend/src/modules/calls/README.md`.
+
+### Corregido
+- **Llamadas que quedaban sonando para siempre**: llamante y receptor quedaban "ocupados" para cualquier otra llamada hasta que alguno colgaba o cerraba la pestaña. Ahora vencen a los 45 segundos, también las que quedaron huérfanas tras un reinicio del servidor.
+- **Una pestaña cerrada podía rechazar o cortar una llamada que no era suya**: la caída del socket de una pestaña que no participaba rechazaba la llamada que sonaba o cortaba la que otra pestaña tenía en curso. Ahora solo termina la llamada el socket que la inició o la aceptó.
+- **Varias pestañas del mismo usuario**: al contestar en una, las demás dejan de sonar; las pestañas sin llamada ya no reproducen el tono de fin, y la segunda pestaña de quien llamaba ya no arma una segunda oferta de conexión.
+- La notificación de una llamada entrante se deja visible lo que suena la llamada (antes, 30 segundos fijos), el aviso ya no se guarda semanas en el servicio push si el dispositivo no está disponible, y al tocarla se trae al frente la ventana abierta en lugar de abrir otra.
+- El tono de una llamada que entra con el audio bloqueado por el navegador suena apenas la persona toca la pantalla, en vez de acumular tonos.
+
 ## [2.0.0] - 2026-10-09
 
 ### Añadido
