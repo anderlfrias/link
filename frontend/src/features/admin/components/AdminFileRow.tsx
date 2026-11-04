@@ -29,16 +29,17 @@ export function AdminFileRow({ file, onDelete }: AdminFileRowProps) {
     : t("admin.files.deletedUser");
 
   return (
-    <div className="flex items-center gap-3 border-b border-black/5 px-1 py-2.5 last:border-0 dark:border-white/10">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-black/5 px-1 py-2.5 last:border-0 dark:border-white/10">
       <FileTypeIcon mimeType={file.mimeType} size={22} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-40 sm:basis-56">
         <p className="truncate text-sm font-medium text-brand-ink dark:text-white">{file.originalName}</p>
         <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
           {formatFileSize(file.size)} · {uploaderLabel} ·{" "}
           {new Date(file.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "es-AR")}
         </p>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+      {/* En mobile las etiquetas bajan a su propia línea (debajo del nombre y el botón de borrar). */}
+      <div className="order-last flex w-full flex-wrap items-center gap-1 sm:order-none sm:w-auto sm:justify-end">
         {file.provider && (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${

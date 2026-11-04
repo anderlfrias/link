@@ -38,4 +38,31 @@ describe("AdminShell", () => {
       }
     }
   });
+
+  it("marca con aria-current solo la sección activa y no duplica la navegación para mobile", () => {
+    vi.mocked(usePathname).mockReturnValue("/admin/users");
+
+    render(
+      <AdminShell>
+        <div />
+      </AdminShell>,
+    );
+
+    // Un solo <nav>, que CSS acomoda como sidebar (desktop) o barra de pestañas (mobile).
+    expect(screen.getAllByRole("navigation")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Usuarios" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Archivos" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("muestra el título del panel para la barra superior de mobile", () => {
+    vi.mocked(usePathname).mockReturnValue("/admin");
+
+    render(
+      <AdminShell>
+        <div />
+      </AdminShell>,
+    );
+
+    expect(screen.getByText("Panel de administración")).toBeInTheDocument();
+  });
 });

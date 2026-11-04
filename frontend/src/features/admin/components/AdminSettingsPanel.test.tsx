@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminSettingsPanel } from "./AdminSettingsPanel";
 import { useAdminSettings } from "@/features/admin/hooks/use-admin-settings";
@@ -36,6 +36,12 @@ vi.mock("@/features/admin/components/FileTypeMultiSelect", () => ({
     <div data-testid="file-type-select">{label}</div>
   ),
 }));
+
+/** Abre una sección desde la lista. En jsdom no hay CSS, así que lista y detalle conviven en el DOM:
+ * lo que decide qué campos existen es la sección abierta, no el ancho de pantalla. */
+async function openSection(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
+}
 
 describe("AdminSettingsPanel", () => {
   const mockSave = vi.fn();
@@ -101,7 +107,7 @@ describe("AdminSettingsPanel", () => {
   });
 
   describe("nota del tamaño máximo sin almacenamiento S3", () => {
-    function renderReady() {
+    async function renderReady() {
       vi.mocked(useAdminSettings).mockReturnValue({
         settings: { ...defaultSettings, maxUploadSizeMb: 2048 },
         status: "ready",
@@ -109,30 +115,31 @@ describe("AdminSettingsPanel", () => {
         refetch: mockRefetch,
       });
       render(<AdminSettingsPanel />);
+      await openSection(userEvent.setup(), "Archivos adjuntos");
     }
 
-    it("aparece cuando no hay subida por partes (sin S3)", () => {
+    it("aparece cuando no hay subida por partes (sin S3)", async () => {
       vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings({ chunkedUploads: false }));
 
-      renderReady();
+      await renderReady();
 
       expect(screen.getByTestId("max-upload-no-s3-note")).toHaveTextContent("32 MB");
       // El campo conserva el valor configurado: la nota explica por qué no se alcanza.
       expect(screen.getByLabelText(/Tamaño máximo \(MB\)/)).toHaveValue(2048);
     });
 
-    it("no aparece con almacenamiento S3", () => {
+    it("no aparece con almacenamiento S3", async () => {
       vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings({ chunkedUploads: true }));
 
-      renderReady();
+      await renderReady();
 
       expect(screen.queryByTestId("max-upload-no-s3-note")).not.toBeInTheDocument();
     });
 
-    it("no aparece mientras los ajustes públicos no cargaron", () => {
+    it("no aparece mientras los ajustes públicos no cargaron", async () => {
       vi.mocked(usePublicSettings).mockReturnValue(null);
 
-      renderReady();
+      await renderReady();
 
       expect(screen.queryByTestId("max-upload-no-s3-note")).not.toBeInTheDocument();
     });
@@ -177,8 +184,9 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
-    expect(screen.getByText("Configuración global")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Configuración global" })).toBeInTheDocument();
 
+    await openSection(user, "Grupos");
     const allowGroupDeleteCheckbox = screen.getByRole("checkbox", {
       name: "Los grupos se pueden eliminar",
     });
@@ -217,6 +225,7 @@ describe("AdminSettingsPanel", () => {
     expect(saveButton).toBeDisabled();
 
     // Change max upload size
+    await openSection(user, "Archivos adjuntos");
     const uploadInput = screen.getByLabelText(/Tamaño máximo \(MB\)/i);
     await user.clear(uploadInput);
     await user.type(uploadInput, "50");
@@ -250,6 +259,7 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
+    await openSection(user, "Almacenamiento");
     const enableCheckbox = screen.getByRole("checkbox", {
       name: "Habilitar worker de migración progresiva a S3",
     });
@@ -299,6 +309,7 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
+    await openSection(user, "Almacenamiento");
     const batchInput = screen.getByLabelText(/Tamaño del lote de migración/i);
     await user.clear(batchInput);
     await user.type(batchInput, "999");
@@ -324,6 +335,7 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
+    await openSection(user, "Retención de datos");
     const retentionInput = screen.getByLabelText(/Retención de registros de auditoría/i);
     expect(retentionInput).toHaveValue(null);
 
@@ -351,6 +363,7 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
+    await openSection(user, "Retención de datos");
     const retentionInput = screen.getByLabelText(/Retención de registros de auditoría/i);
     await user.type(retentionInput, "0");
 
@@ -377,6 +390,7 @@ describe("AdminSettingsPanel", () => {
     const user = userEvent.setup();
     render(<AdminSettingsPanel />);
 
+    await openSection(user, "Grupos");
     const leaveGroupLabel = screen.getByText("¿Quién puede salir del grupo?");
     const leaveGroupSelect = leaveGroupLabel.closest("label")?.querySelector("select")!;
     expect(leaveGroupSelect).toHaveValue("ALL_MEMBERS");
@@ -394,8 +408,106 @@ describe("AdminSettingsPanel", () => {
     );
   });
 
+  describe("navegación por secciones", () => {
+    function renderReady() {
+      vi.mocked(useAdminSettings).mockReturnValue({
+        settings: defaultSettings,
+        status: "ready",
+        error: null,
+        refetch: mockRefetch,
+      });
+      return { user: userEvent.setup(), ...render(<AdminSettingsPanel />) };
+    }
+
+    it("lista las seis secciones agrupadas por tema", () => {
+      renderReady();
+
+      const nav = screen.getByRole("navigation", { name: "Configuración global" });
+      for (const group of ["Comunicación", "Datos y almacenamiento", "Acceso"]) {
+        expect(within(nav).getByText(group)).toBeInTheDocument();
+      }
+      for (const section of ["Mensajes", "Grupos", "Archivos adjuntos", "Retención de datos", "Almacenamiento", "Seguridad"]) {
+        expect(within(nav).getByRole("button", { name: new RegExp(`^${section}`) })).toBeInTheDocument();
+      }
+    });
+
+    it("abre Mensajes por defecto y solo monta los campos de la sección elegida", async () => {
+      const { user } = renderReady();
+
+      expect(screen.getByRole("heading", { name: "Mensajes" })).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Los usuarios pueden editar sus propios mensajes" })).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: "Los grupos se pueden eliminar" })).not.toBeInTheDocument();
+
+      await openSection(user, "Grupos");
+
+      expect(screen.getByRole("checkbox", { name: "Los grupos se pueden eliminar" })).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: "Los usuarios pueden editar sus propios mensajes" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Grupos/ })).toHaveAttribute("aria-current", "true");
+    });
+
+    it("en mobile pasa de la lista al detalle y vuelve con la flecha", async () => {
+      const { user } = renderReady();
+      const listPane = screen.getByRole("navigation", { name: "Configuración global" }).parentElement!;
+
+      // Arranca en la lista: se ve ella y el detalle está oculto (en desktop `lg:` muestra ambos).
+      expect(listPane).not.toHaveClass("hidden");
+
+      await openSection(user, "Seguridad");
+      expect(listPane).toHaveClass("hidden");
+
+      await user.click(screen.getByRole("button", { name: "Volver" }));
+      expect(listPane).not.toHaveClass("hidden");
+    });
+
+    it("marca en la lista la sección con cambios sin guardar, aunque no esté abierta", async () => {
+      const { user } = renderReady();
+      expect(screen.queryByText("Tiene cambios sin guardar")).not.toBeInTheDocument();
+      expect(screen.queryByText("Tenés cambios sin guardar")).not.toBeInTheDocument();
+
+      await openSection(user, "Archivos adjuntos");
+      const uploadInput = screen.getByLabelText(/Tamaño máximo \(MB\)/i);
+      await user.clear(uploadInput);
+      await user.type(uploadInput, "50");
+      await openSection(user, "Grupos");
+
+      expect(within(screen.getByRole("button", { name: /^Archivos adjuntos/ })).getByText("Tiene cambios sin guardar")).toBeInTheDocument();
+      expect(within(screen.getByRole("button", { name: /^Grupos/ })).queryByText("Tiene cambios sin guardar")).not.toBeInTheDocument();
+      expect(screen.getByText("Tenés cambios sin guardar")).toBeInTheDocument();
+    });
+
+    it("marca en la lista la sección con errores de validación, aunque no esté abierta", async () => {
+      const { user } = renderReady();
+
+      await openSection(user, "Archivos adjuntos");
+      const uploadInput = screen.getByLabelText(/Tamaño máximo \(MB\)/i);
+      await user.clear(uploadInput);
+      await user.type(uploadInput, "0");
+      await openSection(user, "Mensajes");
+
+      expect(within(screen.getByRole("button", { name: /^Archivos adjuntos/ })).getByText("Tiene errores")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeDisabled();
+    });
+
+    it("guarda con un solo botón los cambios hechos en varias secciones", async () => {
+      const { user } = renderReady();
+      mockSave.mockResolvedValueOnce({ ...defaultSettings, maxUploadSizeMb: 50, maxGroupMembers: 80 });
+
+      await openSection(user, "Archivos adjuntos");
+      const uploadInput = screen.getByLabelText(/Tamaño máximo \(MB\)/i);
+      await user.clear(uploadInput);
+      await user.type(uploadInput, "50");
+      await openSection(user, "Grupos");
+      const membersInput = screen.getByLabelText(/Máximo de miembros/);
+      await user.clear(membersInput);
+      await user.type(membersInput, "80");
+      await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+      expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ maxUploadSizeMb: 50, maxGroupMembers: 80 }));
+    });
+  });
+
   describe("Sesión y contraseñas", () => {
-    function renderWith(settings: AdminSettings = defaultSettings) {
+    async function renderWith(settings: AdminSettings = defaultSettings) {
       vi.mocked(useAdminSettings).mockReturnValue({
         settings,
         status: "ready",
@@ -403,7 +515,10 @@ describe("AdminSettingsPanel", () => {
         refetch: mockRefetch,
       });
       mockSave.mockResolvedValueOnce(settings);
-      return { user: userEvent.setup(), ...render(<AdminSettingsPanel />) };
+      const user = userEvent.setup();
+      const utils = render(<AdminSettingsPanel />);
+      await openSection(user, "Seguridad");
+      return { user, ...utils };
     }
 
     async function replace(user: ReturnType<typeof userEvent.setup>, label: RegExp, value: string) {
@@ -413,7 +528,7 @@ describe("AdminSettingsPanel", () => {
     }
 
     it("con un proveedor externo muestra la duración de la sesión (es de LINK) pero no las contraseñas, y no las envía", async () => {
-      const { user } = renderWith();
+      const { user } = await renderWith();
       expect(screen.getByTestId("session-settings")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Sesión" })).toBeInTheDocument();
       expect(screen.getByLabelText(/Duración de la sesión/)).toHaveValue(12);
@@ -434,7 +549,7 @@ describe("AdminSettingsPanel", () => {
     });
 
     it("con un proveedor externo valida el rango de la duración de la sesión", async () => {
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, /Duración de la sesión/, "721");
 
@@ -443,7 +558,7 @@ describe("AdminSettingsPanel", () => {
     });
 
     it("con un proveedor externo también advierte que bajar la duración corta las sesiones abiertas", async () => {
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, /Duración de la sesión/, "4");
 
@@ -451,16 +566,16 @@ describe("AdminSettingsPanel", () => {
     });
 
     it("con un proveedor externo también advierte que subir la duración no alarga las sesiones abiertas", async () => {
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, /Duración de la sesión/, "168");
 
       expect(screen.getByTestId("session-warnings")).toHaveTextContent("no alarga las sesiones ya abiertas");
     });
 
-    it("con cuentas locales aparecen la sesión y las contraseñas, con los valores guardados", () => {
+    it("con cuentas locales aparecen la sesión y las contraseñas, con los valores guardados", async () => {
       mockProvider("local");
-      renderWith({ ...defaultSettings, passwordMinLength: 14, passwordRequireSymbol: true, maxFailedLoginAttempts: 5 });
+      await renderWith({ ...defaultSettings, passwordMinLength: 14, passwordRequireSymbol: true, maxFailedLoginAttempts: 5 });
 
       expect(screen.getByRole("heading", { name: "Sesión" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Contraseñas" })).toBeInTheDocument();
@@ -485,7 +600,7 @@ describe("AdminSettingsPanel", () => {
       [/Intentos fallidos seguidos/, "2", "Debe ser un número entero entre 3 y 50, o vacío."],
     ])("valida el rango de %s con %s", async (label, value, message) => {
       mockProvider("local");
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, label, value);
 
@@ -495,7 +610,7 @@ describe("AdminSettingsPanel", () => {
 
     it("valida la duración del bloqueo solo si el bloqueo está activo", async () => {
       mockProvider("local");
-      const { user } = renderWith({ ...defaultSettings, maxFailedLoginAttempts: 5 });
+      const { user } = await renderWith({ ...defaultSettings, maxFailedLoginAttempts: 5 });
 
       await replace(user, /Duración del bloqueo/, "1441");
       expect(screen.getByText("Debe ser un número entero entre 1 y 1440.")).toBeInTheDocument();
@@ -512,7 +627,7 @@ describe("AdminSettingsPanel", () => {
 
     it("guarda los campos convertidos, con vacío como null", async () => {
       mockProvider("local");
-      const { user } = renderWith({ ...defaultSettings, passwordExpirationDays: 90 });
+      const { user } = await renderWith({ ...defaultSettings, passwordExpirationDays: 90 });
 
       await replace(user, /Duración de la sesión/, "24");
       await replace(user, /Vencimiento de la contraseña/, "");
@@ -537,7 +652,7 @@ describe("AdminSettingsPanel", () => {
 
     it("advierte que bajar la duración corta las sesiones abiertas", async () => {
       mockProvider("local");
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, /Duración de la sesión/, "4");
       expect(screen.getByText(/también cierra las sesiones abiertas/)).toBeInTheDocument();
@@ -546,7 +661,7 @@ describe("AdminSettingsPanel", () => {
 
     it("advierte que subir la duración no alarga las sesiones ya abiertas", async () => {
       mockProvider("local");
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await replace(user, /Duración de la sesión/, "168");
       expect(screen.getByTestId("session-warnings")).toHaveTextContent("no alarga las sesiones ya abiertas");
@@ -559,7 +674,7 @@ describe("AdminSettingsPanel", () => {
 
     it("advierte que endurecer la política se aplica en el próximo inicio de sesión", async () => {
       mockProvider("local");
-      const { user } = renderWith();
+      const { user } = await renderWith();
 
       await user.click(screen.getByRole("checkbox", { name: "Una mayúscula" }));
       expect(screen.getByText(/en su próximo inicio de sesión/)).toBeInTheDocument();
@@ -573,7 +688,7 @@ describe("AdminSettingsPanel", () => {
 
     it("advierte al activar o acortar el vencimiento, no al alargarlo", async () => {
       mockProvider("local");
-      const { user } = renderWith({ ...defaultSettings, passwordExpirationDays: 90 });
+      const { user } = await renderWith({ ...defaultSettings, passwordExpirationDays: 90 });
 
       await replace(user, /Vencimiento de la contraseña/, "180");
       expect(screen.queryByTestId("password-warnings")).not.toBeInTheDocument();

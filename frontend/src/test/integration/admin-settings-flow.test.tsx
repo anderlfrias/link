@@ -95,7 +95,8 @@ describe("Flujo clave: AdminSettingsPanel", () => {
     // Inicialmente no está dirty, así que el botón está deshabilitado
     expect(saveButton).toBeDisabled();
 
-    // Togglear allowGroupDelete ("Los grupos se pueden eliminar")
+    // Togglear allowGroupDelete ("Los grupos se pueden eliminar"), que vive en la sección Grupos
+    await user.click(screen.getByRole("button", { name: /^Grupos/ }));
     const allowGroupDeleteCheckbox = screen.getByRole("checkbox", {
       name: "Los grupos se pueden eliminar",
     });
