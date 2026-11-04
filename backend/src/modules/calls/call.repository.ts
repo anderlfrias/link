@@ -59,6 +59,45 @@ export async function findActiveCallForUser(userId: string) {
   });
 }
 
+/// La llamada que todavía suena y en la que participa el usuario (como llamante
+/// o como receptor), si empezó después de `since`. Es lo que se le vuelve a
+/// mostrar a quien abre la app (o recupera la conexión) con una llamada sonando.
+export async function findRingingCallForUser(userId: string, since: Date) {
+  return prisma.call.findFirst({
+    where: {
+      OR: [{ callerId: userId }, { receiverId: userId }],
+      status: CallStatus.RINGING,
+      startedAt: { gte: since },
+    },
+    orderBy: { startedAt: "desc" },
+    include: {
+      caller: { select: callUserSelect },
+      receiver: { select: callUserSelect },
+    },
+  });
+}
+
+/// Ids de las llamadas que siguen `RINGING` y empezaron antes de `cutoff`: las
+/// que ya tendrían que haber vencido.
+export async function findRingingStartedBefore(cutoff: Date): Promise<string[]> {
+  const calls = await prisma.call.findMany({
+    where: { status: CallStatus.RINGING, startedAt: { lt: cutoff } },
+    select: { id: true },
+  });
+  return calls.map((call) => call.id);
+}
+
+/// Pasa la llamada a `MISSED` solo si sigue `RINGING`, en una única sentencia:
+/// si el receptor la aceptó justo antes, no pisa su estado. Devuelve `false` si
+/// ya no estaba sonando.
+export async function markMissedIfRinging(callId: string, endedAt: Date): Promise<boolean> {
+  const { count } = await prisma.call.updateMany({
+    where: { id: callId, status: CallStatus.RINGING },
+    data: { status: CallStatus.MISSED, endedAt, duration: 0 },
+  });
+  return count > 0;
+}
+
 export async function updateCallStatus(
   callId: string,
   status: CallStatus,

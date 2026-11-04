@@ -8,6 +8,27 @@ let activeInterval: NodeJS.Timeout | null = null;
 let activeOscillators: OscillatorNode[] = [];
 let activeGain: GainNode | null = null;
 
+let unlockArmed = false;
+
+/**
+ * Una llamada que entra sin que la persona haya tocado la página (la abrió desde una notificación)
+ * encuentra el audio bloqueado por el navegador: no suena nada hasta el primer gesto. Se desbloquea
+ * en el primer toque o tecla. Mientras tanto las ráfagas se omiten: si se encolaran, sonarían todas
+ * juntas al desbloquear.
+ */
+function armAudioUnlock(ctx: AudioContext): void {
+  if (unlockArmed) return;
+  unlockArmed = true;
+  const unlock = () => {
+    unlockArmed = false;
+    window.removeEventListener("pointerdown", unlock);
+    window.removeEventListener("keydown", unlock);
+    void ctx.resume();
+  };
+  window.addEventListener("pointerdown", unlock);
+  window.addEventListener("keydown", unlock);
+}
+
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -17,6 +38,7 @@ function getAudioContext(): AudioContext | null {
   }
   if (audioCtx.state === "suspended") {
     void audioCtx.resume();
+    armAudioUnlock(audioCtx);
   }
   return audioCtx;
 }
@@ -48,6 +70,7 @@ export function stopAllTones(): void {
 export function resetAudioContextForTesting(): void {
   stopAllTones();
   audioCtx = null;
+  unlockArmed = false;
 }
 
 /**
@@ -59,7 +82,8 @@ export function playIncomingRingtone(): void {
   if (!ctx) return;
 
   const playBurst = () => {
-    if (!audioCtx || audioCtx.state === "closed") return;
+    // Bloqueado (suspended) o cerrado: no se encola nada (ver `armAudioUnlock`).
+    if (!audioCtx || audioCtx.state !== "running") return;
     try {
       const now = audioCtx.currentTime;
       const osc1 = audioCtx.createOscillator();
@@ -94,7 +118,17 @@ export function playIncomingRingtone(): void {
     }
   };
 
-  playBurst();
+  if (ctx.state === "running") {
+    playBurst();
+  } else {
+    // `resume()` tarda un instante (o queda pendiente hasta el primer gesto): la primera ráfaga sale
+    // cuando el audio se libera, si la llamada sigue sonando. Sin esto, la primera tardaría 2,5 s.
+    void Promise.resolve(ctx.resume())
+      .then(() => {
+        if (activeInterval) playBurst();
+      })
+      .catch(() => {});
+  }
   activeInterval = setInterval(playBurst, 2500);
 }
 

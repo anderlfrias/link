@@ -5,8 +5,8 @@ import { userRoomName } from "../../socket/rooms";
 import { AppServer, AppSocket, AuthenticatedSocketUser } from "../../socket/types";
 import { getLogger } from "../../config/request-context";
 import { AppError } from "../../utils/errors";
-import * as CallRepository from "./call.repository";
 import * as CallService from "./call.service";
+import { CallResponse } from "./call.types";
 import {
   acceptCallSchema,
   endCallSchema,
@@ -21,12 +21,20 @@ export const CALL_EVENTS = {
   INCOMING: "call:incoming",
   ACCEPT: "call:accept",
   ACCEPTED: "call:accepted",
+  /// Le avisa a las demás sesiones del receptor que la llamada que les sonaba ya
+  /// la contestó otra (pestaña o dispositivo): tienen que dejar de sonar sin
+  /// colgar nada.
+  ANSWERED_ELSEWHERE: "call:answered-elsewhere",
   REJECT: "call:reject",
   REJECTED: "call:rejected",
   BUSY: "call:busy",
   SIGNAL: "call:signal",
   END: "call:end",
   ENDED: "call:ended",
+  /// Pregunta, con acknowledgement, por la llamada que suena ahora mismo para el
+  /// usuario. `call:incoming` solo llega a quien está conectado en el momento de
+  /// llamar; esto es lo que usa quien abre la app (o recupera la conexión) después.
+  SYNC: "call:sync",
   ERROR: "call:error",
 } as const;
 
@@ -39,6 +47,30 @@ function toClientMessage(err: unknown, fallback: string): string {
     return err.message || fallback;
   }
   return fallback;
+}
+
+/// Una llamada la lleva UN socket: el que la inició (llamante) o el que la aceptó
+/// (receptor). Es el único cuya caída termina la llamada: un usuario puede tener
+/// varias pestañas, y cerrar o reconectar una que no participa no puede cortar
+/// la llamada de otra. Tampoco una llamada que todavía suena y no aceptó nadie:
+/// su receptor puede tener la app cerrada o varias sesiones, y la llamada sigue
+/// disponible hasta que la contestan o vence.
+function carryCall(socket: AppSocket, callId: string): void {
+  socket.data.activeCallId = callId;
+}
+
+function releaseCall(socket: AppSocket, callId: string): void {
+  if (socket.data.activeCallId === callId) {
+    socket.data.activeCallId = undefined;
+  }
+}
+
+/// Avisa a los dos participantes que una llamada sin respuesta venció. Va como
+/// `call:rejected` (con `reason: "timeout"`) porque para los dos clientes es lo
+/// mismo que un rechazo: la llamada terminó sin conectarse.
+export function notifyCallTimedOut(io: AppServer, call: CallResponse): void {
+  io.to(userRoomName(call.callerId)).emit(CALL_EVENTS.REJECTED, { call, reason: "timeout" });
+  io.to(userRoomName(call.receiverId)).emit(CALL_EVENTS.REJECTED, { call, reason: "timeout" });
 }
 
 export function registerCallSocket(socket: AppSocket, io: AppServer): void {
@@ -65,6 +97,7 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
         }
 
         if (call) {
+          carryCall(socket, call.id);
           // Confirmar al emisor que la llamada está saliendo
           socket.emit(CALL_EVENTS.OUTGOING, { call });
           // Notificar al receptor que tiene llamada entrante
@@ -87,10 +120,14 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
       try {
         const validated = await acceptCallSchema.validate(rawPayload);
         const call = await CallService.acceptCall(currentUserId, validated.callId);
+        carryCall(socket, call.id);
 
-        // Notificar tanto al llamante como al receptor
+        // Al llamante, en todas sus pestañas: solo la que inició la llamada actúa.
         io.to(userRoomName(call.callerId)).emit(CALL_EVENTS.ACCEPTED, { call });
-        io.to(userRoomName(call.receiverId)).emit(CALL_EVENTS.ACCEPTED, { call });
+        // Al receptor, solo al socket que aceptó; a las demás sesiones suyas se les
+        // avisa que la llamada ya la contestó otra.
+        socket.emit(CALL_EVENTS.ACCEPTED, { call });
+        socket.to(userRoomName(call.receiverId)).emit(CALL_EVENTS.ANSWERED_ELSEWHERE, { callId: call.id });
         callback?.({ ok: true, call });
       } catch (err: any) {
         getLogger().warn({ err, userId: currentUserId }, "Error al aceptar llamada");
@@ -111,7 +148,9 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
           currentUserId,
           validated.callId,
           (validated.reason as any) || "declined",
+          validated.message,
         );
+        releaseCall(socket, call.id);
 
         io.to(userRoomName(call.callerId)).emit(CALL_EVENTS.REJECTED, {
           call,
@@ -123,7 +162,8 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
         });
         callback?.({ ok: true, call });
       } catch (err: any) {
-        getLogger().warn({ err, userId: currentUserId }, "Error al rechazar llamada");
+        // Sin el texto de la respuesta rápida: es contenido de un mensaje (LOGGING_PLAN.md §4.1).
+        getLogger().warn({ err: err instanceof ValidationError ? err.message : err, userId: currentUserId }, "Error al rechazar llamada");
         const message = toClientMessage(err, "Error al rechazar llamada");
         socket.emit(CALL_EVENTS.ERROR, { message });
         callback?.({ ok: false, error: message });
@@ -169,6 +209,7 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
       try {
         const validated = await endCallSchema.validate(rawPayload);
         const call = await CallService.endCall(currentUserId, validated.callId);
+        releaseCall(socket, call.id);
 
         io.to(userRoomName(call.callerId)).emit(CALL_EVENTS.ENDED, { call });
         io.to(userRoomName(call.receiverId)).emit(CALL_EVENTS.ENDED, { call });
@@ -182,18 +223,36 @@ export function registerCallSocket(socket: AppSocket, io: AppServer): void {
     }),
   );
 
-  // 6. Si el usuario se desconecta imprevistamente durante una llamada activa
+  // 6. La llamada que suena ahora mismo para este usuario (ver CALL_EVENTS.SYNC)
+  socket.on(
+    CALL_EVENTS.SYNC,
+    withRequestContext(socket, async (_rawPayload: unknown, callback?: (res: unknown) => void) => {
+      try {
+        const call = await CallService.getPendingCall(currentUserId);
+        callback?.({ ok: true, call });
+      } catch (err) {
+        getLogger().warn({ err, userId: currentUserId }, "Error al consultar la llamada pendiente");
+        callback?.({ ok: false, error: toClientMessage(err, "Error al consultar la llamada") });
+      }
+    }),
+  );
+
+  // 7. Si cae el socket que llevaba una llamada (llamante que cierra la pestaña
+  // mientras suena, o cualquiera de los dos en plena llamada). Solo ese socket:
+  // ver `carryCall`.
   socket.on(
     SOCKET_LIFECYCLE_EVENTS.DISCONNECTING,
     withRequestContext(socket, async () => {
+      const callId = socket.data.activeCallId as string | undefined;
+      if (!callId) return;
       try {
-        const activeCall = await CallRepository.findActiveCallForUser(currentUserId);
-        if (activeCall) {
-          const ended = await CallService.endCall(currentUserId, activeCall.id);
-          const targetUserId =
-            activeCall.callerId === currentUserId ? activeCall.receiverId : activeCall.callerId;
-          io.to(userRoomName(targetUserId)).emit(CALL_EVENTS.ENDED, { call: ended });
-        }
+        const current = await CallService.getCallById(callId);
+        // Ya terminó (la rechazaron, venció, la cortó el otro): nada que cerrar ni avisar.
+        if (!current || (current.status !== "RINGING" && current.status !== "ACCEPTED")) return;
+
+        const ended = await CallService.endCall(currentUserId, callId);
+        const targetUserId = ended.callerId === currentUserId ? ended.receiverId : ended.callerId;
+        io.to(userRoomName(targetUserId)).emit(CALL_EVENTS.ENDED, { call: ended });
       } catch (err) {
         getLogger().warn({ err, userId: currentUserId }, "Error limpiando llamada tras desconexión");
       }
