@@ -10,6 +10,8 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ### Corregido
 - **Sesiones que se cerraban por una falla del servidor**: si la base de datos no respondía durante el handshake del socket (por ejemplo, al reiniciar el backend con muchos usuarios reconectando), el servidor respondía "token inválido" y el cliente cerraba la sesión. Ahora responde `Server error`, lo deja en el log y el cliente reintenta con espera creciente sin cerrar la sesión.
 
+- **Reconexión del socket al cambiar el perfil**: cambiar el nombre, el idioma o el sonido de notificación abría una conexión nueva con el servidor (con su consulta a la base) aunque la sesión fuera la misma. Ahora la conexión se reutiliza mientras el token no cambie.
+
 ### Añadido
 - **Motivo del cierre de sesión en el log**: cada rechazo de un token (vencido, firma inválida, cuenta desactivada, sesión revocada o más vieja que la duración vigente) deja una línea `info` con el motivo, la edad del token y la duración con la que se emitió, y el UUID del usuario; nunca el token ni el correo.
 - El panel de configuración avisa, al subir la duración de la sesión, que no alarga las sesiones ya abiertas: cada usuario tiene que volver a iniciar sesión.

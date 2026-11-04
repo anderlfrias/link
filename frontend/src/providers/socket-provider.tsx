@@ -20,19 +20,24 @@ const RECONNECT_MAX_MS = 30_000;
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
+  // La conexión depende del token, no del objeto `session`: cambiar el nombre, el idioma o el sonido
+  // de notificación crea una `session` nueva con el mismo token, y no hay por qué reconectar.
+  const token = session?.token ?? null;
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!session) {
+    if (!token) {
       disconnectSocket();
       setSocket(null);
       setConnected(false);
       return;
     }
 
-    const nextSocket = connectSocket(session.token);
+    const nextSocket = connectSocket(token);
     setSocket(nextSocket);
+    // Si se reutilizó una conexión que ya estaba abierta, `connect` no vuelve a dispararse.
+    setConnected(Boolean(nextSocket.connected));
 
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let failedAttempts = 0;
@@ -81,7 +86,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       nextSocket.off("disconnect", handleDisconnect);
       nextSocket.off("connect_error", handleConnectError);
     };
-  }, [session]);
+  }, [token]);
 
   const value = useMemo(() => ({ socket, connected }), [socket, connected]);
 

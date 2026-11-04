@@ -41,6 +41,25 @@ describe("socket-client", () => {
     });
   });
 
+  it("con el mismo token reutiliza la conexión: no abre otra ni desconecta la que hay", () => {
+    const first = connectSocket("token-1");
+
+    const second = connectSocket("token-1");
+
+    expect(second).toBe(first);
+    expect(io).toHaveBeenCalledTimes(1);
+    expect(mockSocketInstance.disconnect).not.toHaveBeenCalled();
+  });
+
+  it("después de desconectar, el mismo token abre una conexión nueva", () => {
+    connectSocket("token-1");
+    disconnectSocket();
+
+    connectSocket("token-1");
+
+    expect(io).toHaveBeenCalledTimes(2);
+  });
+
   it("disconnectSocket disconnects active socket and clears instance", () => {
     connectSocket("token-1");
     expect(getSocket()).not.toBeNull();
