@@ -14,6 +14,7 @@ vi.mock("../modules/settings/settings.service", () => ({
 
 vi.mock("../config/request-context", () => ({
   bindContext: vi.fn(),
+  getLogger: () => ({ info: vi.fn() }),
 }));
 
 // Import posterior al mock, como pide vitest para que el mock ya esté armado.

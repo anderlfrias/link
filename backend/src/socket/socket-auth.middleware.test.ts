@@ -27,6 +27,9 @@ vi.mock("../modules/settings/settings.service", () => ({
   getSettings: vi.fn().mockResolvedValue({ localSessionTtlHours: 1 }),
 }));
 
+const logSpy = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }));
+vi.mock("../config/request-context", () => ({ getLogger: () => logSpy }));
+
 /// Identidad como la que devuelve el verificador: solo lo que dice el token.
 function sessionIdentity(overrides: Record<string, unknown> = {}) {
   const now = Math.floor(Date.now() / 1000);
@@ -203,6 +206,22 @@ describe("socket-auth.middleware", () => {
     await vi.waitFor(() => {
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "Invalid token" }));
     });
+  });
+
+  it("una falla de la base no es una sesión inválida: responde 'Server error' y la deja en el log", async () => {
+    const failure = new Error("Timed out fetching a new connection from the connection pool");
+    vi.mocked(JwtModule.verifyAccessToken).mockReturnValue(sessionIdentity() as any);
+    vi.mocked(prisma.user.findUnique).mockRejectedValue(failure);
+
+    const { socket, next } = connect("valid-jwt");
+
+    await vi.waitFor(() => {
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "Server error" }));
+    });
+    expect(next).not.toHaveBeenCalledWith(expect.objectContaining({ message: "Invalid token" }));
+    expect(logSpy.error).toHaveBeenCalledWith({ err: failure }, "socket handshake failed");
+    expect(socket.data.user).toBeUndefined();
+    expect(scheduleSessionExpiry).not.toHaveBeenCalled();
   });
 
   it("una sesión más vieja que la duración vigente responde 'Token expired'", async () => {

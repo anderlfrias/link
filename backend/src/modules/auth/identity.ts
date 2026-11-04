@@ -1,4 +1,5 @@
 import { User, UserStatus } from "@prisma/client";
+import { getLogger } from "../../config/request-context";
 import { ForbiddenError, UnauthorizedError } from "../../utils/errors";
 import * as SettingsService from "../settings/settings.service";
 import { findUserById } from "./auth.repository";
@@ -16,6 +17,31 @@ function toSeconds(date: Date): number {
   return Math.floor(date.getTime() / 1000);
 }
 
+/// Corta la resolución dejando constancia del motivo (nunca el token). Es lo que
+/// permite contestar "¿por qué se me cerró la sesión?": la edad y la duración
+/// con la que se emitió el token, y la duración vigente en ESTE proceso (si
+/// difiere de la que configuró el admin, hay un proceso con la configuración
+/// vieja en caché).
+function rejectSession(
+  identity: AuthenticatedIdentity,
+  reason: string,
+  error: UnauthorizedError,
+  extra: Record<string, unknown> = {},
+): never {
+  const { iat } = identity;
+  getLogger().info(
+    {
+      reason,
+      userId: identity.user.id,
+      tokenAgeSeconds: iat === undefined ? undefined : toSeconds(new Date()) - iat,
+      tokenTtlSeconds: iat === undefined || !identity.user.exp ? undefined : identity.user.exp - iat,
+      ...extra,
+    },
+    "session rejected",
+  );
+  throw error;
+}
+
 /// Resolución de identidad unificada (LOCAL_AUTH_PLAN.md, D7). La usan
 /// `attachInternalUser`, el handshake del socket y `/files/:id/content`: antes
 /// eran tres copias de la misma búsqueda.
@@ -31,21 +57,28 @@ function toSeconds(date: Date): number {
 /// sesión revocada es una sesión que terminó.
 export async function resolveInternalUser(identity: AuthenticatedIdentity): Promise<ResolvedUser> {
   const record = await findUserById(identity.user.id);
-  assertActive(record);
+  if (!record) {
+    rejectSession(identity, "user_not_found", new UnauthorizedError("User not found"));
+  }
+  if (record.status !== UserStatus.ACTIVE) {
+    rejectSession(identity, "account_disabled", new UnauthorizedError("Account disabled", "account_disabled"));
+  }
   if (identity.iat === undefined) {
-    throw new UnauthorizedError("Invalid token");
+    rejectSession(identity, "missing_iat", new UnauthorizedError("Invalid token"));
   }
   // `iat` está en segundos y `tokensValidAfter` se guarda truncado al
   // segundo: un token emitido en el mismo segundo que el corte (como el que
   // devuelve el cambio de contraseña) sigue siendo válido (D9).
   if (record.tokensValidAfter && identity.iat < toSeconds(record.tokensValidAfter)) {
-    throw new UnauthorizedError("Token revoked", "token_revoked");
+    rejectSession(identity, "token_revoked", new UnauthorizedError("Token revoked", "token_revoked"));
   }
   // Bajar la duración de sesión corta también los tokens ya emitidos; subirla
   // no alarga ninguno, porque manda el `exp` firmado (D16).
   const { localSessionTtlHours } = await SettingsService.getSettings();
   if (toSeconds(new Date()) - identity.iat > localSessionTtlHours * 3600) {
-    throw new UnauthorizedError("Session expired", "session_expired");
+    rejectSession(identity, "session_expired", new UnauthorizedError("Session expired", "session_expired"), {
+      configuredTtlHours: localSessionTtlHours,
+    });
   }
   return {
     record,
@@ -58,15 +91,6 @@ export async function resolveInternalUser(identity: AuthenticatedIdentity): Prom
       internalUserId: record.id,
     },
   };
-}
-
-function assertActive(record: User | null): asserts record is User {
-  if (!record) {
-    throw new UnauthorizedError("User not found");
-  }
-  if (record.status !== UserStatus.ACTIVE) {
-    throw new UnauthorizedError("Account disabled", "account_disabled");
-  }
 }
 
 /// Un token restringido (`pcr`, D13) solo sirve para cambiar la contraseña.

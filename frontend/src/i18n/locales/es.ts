@@ -538,6 +538,7 @@ export const es = {
       rangeError: "Debe ser un número entero entre {min} y {max}.",
       optionalRangeError: "Debe ser un número entero entre {min} y {max}, o vacío.",
       ttlLoweredWarning: "Bajar la duración también cierra las sesiones abiertas que ya la superan.",
+      ttlRaisedWarning: "Subir la duración no alarga las sesiones ya abiertas: conservan el vencimiento con el que se iniciaron, y cada usuario tiene que volver a iniciar sesión para que le aplique la nueva duración.",
       policyHardenedWarning: "No se cierra ninguna sesión: quien tenga una contraseña que no cumpla la política nueva va a tener que cambiarla en su próximo inicio de sesión.",
       expirationWarning: "Las contraseñas más antiguas que el vencimiento se van a tener que cambiar en el próximo inicio de sesión.",
     },

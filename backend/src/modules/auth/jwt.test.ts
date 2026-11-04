@@ -1,6 +1,10 @@
 import jwt from "jsonwebtoken";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_SESSION_JWT_SECRET, useExternalProvider, useLocalAuth } from "../../test/auth-mode";
+
+const logSpy = vi.hoisted(() => ({ info: vi.fn() }));
+vi.mock("../../config/request-context", () => ({ getLogger: () => logSpy }));
+
 import { SESSION_TOKEN_AUDIENCE, SESSION_TOKEN_ISSUER, signSessionToken, verifyAccessToken } from "./jwt";
 
 // El secreto con el que un proveedor externo firma su propio token: no es el de sesión de LINK.
@@ -145,5 +149,45 @@ describe.each([
     const token = signSession({ email: "ana@example.com" }, {}, PROVIDER_JWT_SECRET);
 
     expect(() => verifyAccessToken(token)).toThrow(jwt.JsonWebTokenError);
+  });
+
+  describe("constancia del motivo del rechazo", () => {
+    beforeEach(() => {
+      logSpy.info.mockClear();
+    });
+
+    it("un token vencido deja el usuario, su edad y la duración con la que se emitió", () => {
+      const iat = Math.floor(Date.now() / 1000) - 7200;
+      const token = signSession({ email: "ana@example.com", iat }, { expiresIn: 3600 });
+
+      expect(() => verifyAccessToken(token)).toThrow(jwt.TokenExpiredError);
+
+      expect(logSpy.info).toHaveBeenCalledTimes(1);
+      const [fields, message] = logSpy.info.mock.calls[0];
+      expect(message).toBe("session token rejected");
+      expect(fields).toMatchObject({ reason: "token_expired", userId: "user-1", tokenTtlSeconds: 3600 });
+      expect(fields.tokenAgeSeconds).toBeGreaterThanOrEqual(7200);
+      expect(fields.tokenAgeSeconds).toBeLessThanOrEqual(7202);
+    });
+
+    it("un token de otro secreto deja el motivo sin usuario y sin el token", () => {
+      const token = signSession({ email: "ana@example.com" }, {}, "otro-secreto-de-32-caracteres-o-mas!!");
+
+      expect(() => verifyAccessToken(token)).toThrow(jwt.JsonWebTokenError);
+
+      expect(logSpy.info).toHaveBeenCalledWith(
+        { reason: "invalid_token", detail: "invalid signature" },
+        "session token rejected",
+      );
+      expect(JSON.stringify(logSpy.info.mock.calls)).not.toContain(token);
+    });
+
+    it("un token válido no deja ninguna línea", () => {
+      const token = signSessionToken({ id: "user-1", email: "ana@example.com" }, { ttlHours: 1, mustChangePassword: false });
+
+      verifyAccessToken(token);
+
+      expect(logSpy.info).not.toHaveBeenCalled();
+    });
   });
 });
