@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { SocketProvider, useSocket } from "./socket-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -240,11 +240,11 @@ describe("SocketProvider and useSocket", () => {
       return { handlers, mockSocket, ...view };
     }
 
-    let eventListener: ReturnType<typeof vi.fn>;
+    let eventListener: Mock<EventListener>;
 
     beforeEach(() => {
       vi.useFakeTimers();
-      eventListener = vi.fn();
+      eventListener = vi.fn<EventListener>();
       window.addEventListener(SESSION_EXPIRED_EVENT, eventListener);
     });
 
