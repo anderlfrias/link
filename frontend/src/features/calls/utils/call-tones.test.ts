@@ -64,6 +64,68 @@ describe("call-tones", () => {
     expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(4); // 2 por ráfaga
   });
 
+  describe("con el audio bloqueado por el navegador (una llamada que entra sin que se haya tocado la página)", () => {
+    beforeEach(() => {
+      mockAudioContext.state = "suspended";
+    });
+
+    it("no encola ráfagas mientras está bloqueado: sonarían todas juntas al liberarse", () => {
+      mockAudioContext.resume.mockReturnValue(new Promise(() => {}));
+
+      playIncomingRingtone();
+      vi.advanceTimersByTime(8000);
+
+      expect(mockAudioContext.createOscillator).not.toHaveBeenCalled();
+    });
+
+    it("la primera ráfaga suena apenas se libera el audio, sin esperar al intervalo", async () => {
+      mockAudioContext.resume.mockImplementation(async () => {
+        mockAudioContext.state = "running";
+      });
+
+      playIncomingRingtone();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(2);
+    });
+
+    it("si la llamada ya no suena cuando se libera el audio, no suena nada", async () => {
+      let release: () => void = () => {};
+      mockAudioContext.resume.mockReturnValue(
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+
+      playIncomingRingtone();
+      stopAllTones();
+      mockAudioContext.state = "running";
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockAudioContext.createOscillator).not.toHaveBeenCalled();
+    });
+
+    it("el primer toque o tecla de la persona libera el audio, una sola vez", () => {
+      mockAudioContext.resume.mockReturnValue(new Promise(() => {}));
+      playIncomingRingtone();
+      playIncomingRingtone();
+      mockAudioContext.resume.mockClear();
+
+      window.dispatchEvent(new Event("pointerdown"));
+      window.dispatchEvent(new Event("keydown"));
+
+      expect(mockAudioContext.resume).toHaveBeenCalledTimes(1);
+    });
+
+    it("un resume que falla no rompe el tono", async () => {
+      mockAudioContext.resume.mockRejectedValue(new Error("blocked"));
+
+      expect(() => playIncomingRingtone()).not.toThrow();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  });
+
   it("reproduce tono de llamada saliente", () => {
     playOutgoingRingtone();
     expect(mockAudioContext.createOscillator).toHaveBeenCalled();

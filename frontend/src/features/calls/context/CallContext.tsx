@@ -8,9 +8,11 @@ import {
   Call,
   CallContextValue,
   CallError,
+  CallOutcome,
   CallState,
   CallType,
 } from "../types/call.types";
+import { CALL_RING_SAFETY_MS } from "../constants/call.constants";
 import {
   playEndCallTone,
   playIncomingRingtone,
@@ -52,6 +54,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [callDuration, setCallDuration] = useState(0);
   const [callError, setCallError] = useState<CallError | null>(null);
   const [mediaWarning, setMediaWarning] = useState<MediaWarning | null>(null);
+  const [callOutcome, setCallOutcome] = useState<CallOutcome | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -59,6 +62,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
   // Copia síncrona de activeCall: los handlers de socket/WebRTC no pueden esperar a un re-render.
   const activeCallRef = useRef<Call | null>(null);
+  // Lo mismo para el estado: `call:sync` y los temporizadores deciden con el estado de ahora, no con
+  // el que tenía el render en el que se crearon.
+  const callStateRef = useRef<CallState>("idle");
+  callStateRef.current = callState;
+  // Entre que se toca "aceptar" y llega la confirmación (pide el micrófono, que puede tardar), la
+  // llamada ya no figura sonando en el servidor: sin esto una consulta en ese momento la daría por
+  // terminada y cerraría lo que la persona acaba de aceptar.
+  const acceptingRef = useRef(false);
 
   const updateActiveCall = useCallback((call: Call | null) => {
     activeCallRef.current = call;
@@ -66,6 +77,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearCallError = useCallback(() => setCallError(null), []);
+  const dismissCallOutcome = useCallback(() => setCallOutcome(null), []);
 
   // Limpieza total de conexión y medios
   const cleanupMediaAndPeer = useCallback(() => {
@@ -223,6 +235,40 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [callState]);
 
+  // Llamada que entra (en vivo o recuperada con `call:sync`): modal y tono.
+  const showIncomingCall = useCallback(
+    (incoming: Call) => {
+      setCallOutcome(null);
+      updateActiveCall(incoming);
+      setCallState("incoming");
+      playIncomingRingtone();
+    },
+    [updateActiveCall],
+  );
+
+  // Pregunta al servidor si hay una llamada sonando para mí. `call:incoming` solo llega a quien está
+  // conectado en el momento de llamar: quien entra por la notificación, o recupera la conexión, llega
+  // tarde a ese evento y sin esto no ve nada para contestar.
+  const syncPendingCall = useCallback(() => {
+    if (!socket?.connected) return;
+    socket.emit(SOCKET_EVENTS.call.sync, {}, (res: { ok: boolean; call?: Call | null }) => {
+      if (!res?.ok) return;
+      const pending = res.call ?? null;
+      const state = callStateRef.current;
+
+      if (pending) {
+        if (pending.receiverId === currentUserId && state === "idle") showIncomingCall(pending);
+        return;
+      }
+      // El servidor no tiene ninguna sonando: si acá quedó el modal de una llamada que ya terminó (el
+      // aviso se perdió con la pestaña en segundo plano o el socket caído), se cierra.
+      if (state === "incoming" && !acceptingRef.current) {
+        stopAllTones();
+        handleCallEndedLocally();
+      }
+    });
+  }, [socket, currentUserId, showIncomingCall, handleCallEndedLocally]);
+
   // 1. Iniciar llamada saliente
   const startCall = useCallback(
     async (conversationId: string, receiverId: string, receiverName: string, type: CallType) => {
@@ -230,6 +276,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (callState !== "idle") return;
 
       setCallError(null);
+      setCallOutcome(null);
       try {
         // Pide micrófono/cámara; si el equipo no los tiene, sigue en modo solo-recepción
         const { stream, warning } = await acquireLocalMedia(type);
@@ -249,6 +296,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               stopAllTones();
               playEndCallTone();
               handleCallEndedLocally();
+              if (res?.isBusy) setCallOutcome({ kind: "busy", conversationId, receiverId, receiverName, type });
             } else if (res.call) {
               updateActiveCall({ ...res.call, receiverName });
             }
@@ -268,6 +316,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     if (!socket || !activeCall) return;
 
+    acceptingRef.current = true;
     try {
       stopAllTones();
       setCallError(null);
@@ -282,6 +331,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       getOrCreatePeerConnection(activeCall.callerId, activeCall.id);
 
       socket.emit(SOCKET_EVENTS.call.accept, { callId: activeCall.id }, (res: { ok: boolean; call?: Call }) => {
+        acceptingRef.current = false;
         if (res?.ok && res.call) {
           callLog("accept acked", { callId: res.call.id });
           updateActiveCall(res.call);
@@ -295,6 +345,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       // La llamada sigue en RINGING en el backend: se rechaza para que el llamante no quede esperando.
       // (El contrato solo admite "declined"/"busy"; no distingue error de medios.)
       console.warn("[call] local media failed (callee)", err);
+      acceptingRef.current = false;
       socket.emit(SOCKET_EVENTS.call.reject, { callId: activeCall.id, reason: "declined" });
       playEndCallTone();
       handleCallEndedLocally();
@@ -304,9 +355,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // 3. Rechazar llamada
   const rejectCall = useCallback(
-    async (reason: "declined" | "busy" = "declined") => {
+    async (reason: "declined" | "busy" = "declined", message?: string) => {
       if (!socket || !activeCall) return;
-      socket.emit(SOCKET_EVENTS.call.reject, { callId: activeCall.id, reason });
+      const reply = message?.trim();
+      socket.emit(SOCKET_EVENTS.call.reject, { callId: activeCall.id, reason, ...(reply ? { message: reply } : {}) });
       playEndCallTone();
       handleCallEndedLocally();
     },
@@ -346,20 +398,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!socket) return;
 
+    // Los eventos de llamada llegan a TODAS las pestañas del usuario. Solo actúa la que tiene esa
+    // llamada: las demás (idle) no tienen que sonar un tono de fin ni, la del llamante, armar una
+    // segunda oferta WebRTC.
+    const isCurrentCall = (callId: string) => activeCallRef.current?.id === callId;
+
     // Llamada entrante
     const handleIncoming = (payload: { call: Call }) => {
+      // La misma llamada puede llegar dos veces (el evento en vivo y la respuesta de `call:sync`): no
+      // es una segunda llamada, y rechazarla por "ocupado" cortaría la que está sonando.
+      if (isCurrentCall(payload.call.id)) return;
       if (callState !== "idle") {
         // Si ya estamos en otra llamada, emitir ocupado
         socket.emit(SOCKET_EVENTS.call.reject, { callId: payload.call.id, reason: "busy" });
         return;
       }
-      updateActiveCall(payload.call);
-      setCallState("incoming");
-      playIncomingRingtone();
+      showIncomingCall(payload.call);
+    };
+
+    // La llamada que sonaba acá la contestó otra sesión mía (otra pestaña o dispositivo)
+    const handleAnsweredElsewhere = (payload: { callId: string }) => {
+      if (!isCurrentCall(payload.callId) || callStateRef.current !== "incoming" || acceptingRef.current) return;
+      stopAllTones();
+      handleCallEndedLocally();
     };
 
     // Llamada saliente aceptada por el otro peer
     const handleAccepted = async (payload: { call: Call }) => {
+      if (!isCurrentCall(payload.call.id)) return;
       callLog("call accepted", { callId: payload.call.id });
       stopAllTones();
       updateActiveCall(payload.call);
@@ -392,19 +458,47 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Llamada rechazada u ocupada
-    const handleRejected = () => {
+    // Llamada rechazada, ocupada o vencida sin respuesta (`reason: "timeout"`, la vence el servidor)
+    const handleRejected = (payload: { call: Call; reason?: string }) => {
+      const current = activeCallRef.current;
+      if (!current || current.id !== payload.call.id) return;
+
+      // Si la llamé yo, queda a la vista por qué no se conectó, con un toque para volver a llamar.
+      if (current.callerId === currentUserId) {
+        const kind =
+          payload.call.status === "BUSY"
+            ? "busy"
+            : payload.call.status === "REJECTED"
+              ? "declined"
+              : payload.reason === "timeout"
+                ? "no-answer"
+                : null;
+        if (kind) {
+          setCallOutcome({
+            kind,
+            conversationId: current.conversationId,
+            receiverId: current.receiverId,
+            receiverName: current.receiverName ?? "",
+            type: current.type,
+          });
+        }
+      }
       playEndCallTone();
       handleCallEndedLocally();
     };
 
+    // El receptor estaba en otra llamada: el aviso llega antes de que el llamante tenga `activeCall`
+    // (solo existe cuando el servidor confirma que sale), así que se distingue por estar llamando.
+    // El resultado "ocupado" lo deja la respuesta de `call:initiate`.
     const handleBusy = () => {
+      if (callStateRef.current !== "outgoing") return;
       playEndCallTone();
       handleCallEndedLocally();
     };
 
     // Llamada terminada
-    const handleEnded = () => {
+    const handleEnded = (payload?: { call?: Call }) => {
+      if (!payload?.call || !isCurrentCall(payload.call.id)) return;
       playEndCallTone();
       handleCallEndedLocally();
     };
@@ -465,6 +559,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     socket.on(SOCKET_EVENTS.call.incoming, handleIncoming);
     socket.on(SOCKET_EVENTS.call.accepted, handleAccepted);
+    socket.on(SOCKET_EVENTS.call.answeredElsewhere, handleAnsweredElsewhere);
     socket.on(SOCKET_EVENTS.call.rejected, handleRejected);
     socket.on(SOCKET_EVENTS.call.busy, handleBusy);
     socket.on(SOCKET_EVENTS.call.ended, handleEnded);
@@ -473,12 +568,61 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => {
       socket.off(SOCKET_EVENTS.call.incoming, handleIncoming);
       socket.off(SOCKET_EVENTS.call.accepted, handleAccepted);
+      socket.off(SOCKET_EVENTS.call.answeredElsewhere, handleAnsweredElsewhere);
       socket.off(SOCKET_EVENTS.call.rejected, handleRejected);
       socket.off(SOCKET_EVENTS.call.busy, handleBusy);
       socket.off(SOCKET_EVENTS.call.ended, handleEnded);
       socket.off(SOCKET_EVENTS.call.signal, handleSignal);
     };
-  }, [socket, callState, currentUserId, getOrCreatePeerConnection, handleCallEndedLocally, failCall, updateActiveCall]);
+  }, [
+    socket,
+    callState,
+    currentUserId,
+    getOrCreatePeerConnection,
+    handleCallEndedLocally,
+    failCall,
+    updateActiveCall,
+    showIncomingCall,
+  ]);
+
+  // Al conectar, y cada vez que se recupera la conexión o la pestaña vuelve a estar a la vista (el
+  // navegador frena los timers de las pestañas en segundo plano y el socket puede haberse caído sin
+  // avisar), se pregunta si hay una llamada sonando.
+  useEffect(() => {
+    if (!socket) return;
+    syncPendingCall();
+    socket.on("connect", syncPendingCall);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") syncPendingCall();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      socket.off("connect", syncPendingCall);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [socket, syncPendingCall]);
+
+  // Tope de seguridad: una llamada no puede quedar "sonando" en pantalla más de lo que el servidor la
+  // deja sonar, aunque se haya perdido el aviso de que terminó.
+  useEffect(() => {
+    if (callState !== "incoming" && callState !== "outgoing") return;
+    const timer = setTimeout(() => {
+      if (acceptingRef.current) return;
+      const current = activeCallRef.current;
+      if (callStateRef.current === "outgoing" && current) {
+        setCallOutcome({
+          kind: "no-answer",
+          conversationId: current.conversationId,
+          receiverId: current.receiverId,
+          receiverName: current.receiverName ?? "",
+          type: current.type,
+        });
+      }
+      playEndCallTone();
+      handleCallEndedLocally();
+    }, CALL_RING_SAFETY_MS);
+    return () => clearTimeout(timer);
+  }, [callState, handleCallEndedLocally]);
 
   const peerName = activeCall
     ? (activeCall.callerId === currentUserId ? activeCall.receiverName : activeCall.callerName) ?? null
@@ -496,6 +640,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     callError,
     clearCallError,
     mediaWarning,
+    callOutcome,
+    dismissCallOutcome,
     startCall,
     acceptCall,
     rejectCall,
@@ -519,6 +665,8 @@ const defaultCallContext: CallContextValue = {
   callError: null,
   clearCallError: () => {},
   mediaWarning: null,
+  callOutcome: null,
+  dismissCallOutcome: () => {},
   startCall: async () => {},
   acceptCall: async () => {},
   rejectCall: async () => {},
