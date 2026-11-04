@@ -1,6 +1,7 @@
-import jwt, { JsonWebTokenError } from "jsonwebtoken";
+import jwt, { JsonWebTokenError, JwtPayload, TokenExpiredError } from "jsonwebtoken";
 import { currentProviderId } from "../../auth-providers/registry";
 import env from "../../config/env";
+import { getLogger } from "../../config/request-context";
 import { AuthenticatedIdentity, SessionTokenPayload } from "./auth.types";
 
 /// Emisor y audiencia de los tokens de sesión de LINK (LOCAL_AUTH_PLAN.md, D5).
@@ -27,11 +28,46 @@ export function signSessionToken(
   });
 }
 
+/// Deja constancia de por qué se rechazó un token, nunca el token en sí. Sin esto
+/// no hay cómo saber, ante un "se me cierra la sesión", si el token venció (y
+/// con qué duración se había emitido), si lo firmó otro secreto o si es de otra
+/// app. Del token vencido sí se lee el `sub` y las fechas: `jsonwebtoken`
+/// verifica la firma antes del vencimiento, así que no es un dato falsificable.
+function logTokenRejection(token: string, error: unknown): void {
+  if (error instanceof TokenExpiredError) {
+    const claims = jwt.decode(token) as JwtPayload | null;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    getLogger().info(
+      {
+        reason: "token_expired",
+        userId: claims?.sub,
+        tokenAgeSeconds: claims?.iat === undefined ? undefined : nowSeconds - claims.iat,
+        tokenTtlSeconds: claims?.iat === undefined || claims.exp === undefined ? undefined : claims.exp - claims.iat,
+      },
+      "session token rejected",
+    );
+    return;
+  }
+  getLogger().info(
+    { reason: "invalid_token", detail: error instanceof Error ? error.message : "unknown" },
+    "session token rejected",
+  );
+}
+
 /// El único verificador de tokens de request: solo acepta la sesión propia de
 /// LINK. El token de un proveedor externo no autentica en ningún lado aunque esté
 /// bien firmado. Los errores son los de `jsonwebtoken` (`TokenExpiredError`
 /// incluido): los middlewares ya los traducen a 401.
 export function verifyAccessToken(token: string): AuthenticatedIdentity {
+  try {
+    return verifySessionToken(token);
+  } catch (error) {
+    logTokenRejection(token, error);
+    throw error;
+  }
+}
+
+function verifySessionToken(token: string): AuthenticatedIdentity {
   const payload = jwt.verify(token, env.auth.sessionSecret, {
     algorithms: ["HS256"],
     issuer: SESSION_TOKEN_ISSUER,

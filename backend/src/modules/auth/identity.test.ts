@@ -12,6 +12,9 @@ vi.mock("../settings/settings.service", () => ({
   getSettings: vi.fn(),
 }));
 
+const logSpy = vi.hoisted(() => ({ info: vi.fn() }));
+vi.mock("../../config/request-context", () => ({ getLogger: () => logSpy }));
+
 import * as SettingsService from "../settings/settings.service";
 import { findUserById } from "./auth.repository";
 import { AuthenticatedIdentity } from "./auth.types";
@@ -69,6 +72,7 @@ function sessionIdentity(
 beforeEach(() => {
   vi.mocked(findUserById).mockReset();
   vi.mocked(SettingsService.getSettings).mockResolvedValue({ localSessionTtlHours: 12 } as never);
+  logSpy.info.mockClear();
 });
 
 // La resolución es una sola, sin ramas por modo: la sesión es siempre la de LINK.
@@ -147,6 +151,57 @@ describe.each([
     vi.mocked(findUserById).mockResolvedValue(buildUser());
 
     await expect(resolveInternalUser(identity({ iat: undefined }))).rejects.toThrow(UnauthorizedError);
+  });
+
+  describe("constancia del motivo del rechazo", () => {
+    it("una sesión vencida por duración vigente deja edad del token, duración de emisión y duración configurada", async () => {
+      vi.mocked(findUserById).mockResolvedValue(buildUser());
+      vi.mocked(SettingsService.getSettings).mockResolvedValue({ localSessionTtlHours: 4 } as never);
+      const iat = nowSeconds() - 5 * 3600;
+
+      await expect(
+        resolveInternalUser(identity({ iat, user: { ...identity().user, exp: iat + 12 * 3600 } })),
+      ).rejects.toMatchObject({ code: "session_expired" });
+
+      expect(logSpy.info).toHaveBeenCalledTimes(1);
+      const [fields, message] = logSpy.info.mock.calls[0];
+      expect(message).toBe("session rejected");
+      expect(fields).toMatchObject({
+        reason: "session_expired",
+        userId: "user-1",
+        tokenTtlSeconds: 12 * 3600,
+        configuredTtlHours: 4,
+      });
+      expect(fields.tokenAgeSeconds).toBeGreaterThanOrEqual(5 * 3600);
+      expect(fields.tokenAgeSeconds).toBeLessThanOrEqual(5 * 3600 + 2);
+    });
+
+    it.each([
+      { reason: "user_not_found", setup: () => vi.mocked(findUserById).mockResolvedValue(null) },
+      {
+        reason: "account_disabled",
+        setup: () => vi.mocked(findUserById).mockResolvedValue(buildUser({ status: UserStatus.INACTIVE })),
+      },
+      {
+        reason: "token_revoked",
+        setup: () => vi.mocked(findUserById).mockResolvedValue(buildUser({ tokensValidAfter: new Date() })),
+      },
+    ])("$reason queda registrado con el UUID del usuario y sin datos personales", async ({ reason, setup }) => {
+      setup();
+
+      await expect(resolveInternalUser(identity({ iat: nowSeconds() - 60 }))).rejects.toThrow(UnauthorizedError);
+
+      expect(logSpy.info).toHaveBeenCalledWith(expect.objectContaining({ reason, userId: "user-1" }), "session rejected");
+      expect(JSON.stringify(logSpy.info.mock.calls)).not.toContain("ana@example.com");
+    });
+
+    it("una sesión válida no deja ninguna línea", async () => {
+      vi.mocked(findUserById).mockResolvedValue(buildUser());
+
+      await resolveInternalUser(identity());
+
+      expect(logSpy.info).not.toHaveBeenCalled();
+    });
   });
 });
 
