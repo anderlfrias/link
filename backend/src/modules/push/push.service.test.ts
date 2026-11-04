@@ -184,6 +184,43 @@ describe("push.service", () => {
       );
     });
 
+    it("sin opciones llama a web-push sin TTL ni urgencia propios (como siempre)", async () => {
+      vi.mocked(PushRepository.findByUserIds).mockResolvedValue([
+        { id: "sub-1", userId: "u-1", endpoint: FCM_ENDPOINT_1, p256dh: "key-1", auth: "auth-1" },
+      ] as any);
+      mockSendNotification.mockResolvedValue({});
+
+      await notifyUsers(["u-1"], payload);
+
+      expect(mockSendNotification.mock.calls[0]).toHaveLength(2);
+    });
+
+    it("con opciones pasa el TTL y la urgencia a web-push", async () => {
+      vi.mocked(PushRepository.findByUserIds).mockResolvedValue([
+        { id: "sub-1", userId: "u-1", endpoint: FCM_ENDPOINT_1, p256dh: "key-1", auth: "auth-1" },
+      ] as any);
+      mockSendNotification.mockResolvedValue({});
+
+      await notifyUsers(["u-1"], payload, { ttlSeconds: 45, urgency: "high" });
+
+      expect(mockSendNotification).toHaveBeenCalledWith(
+        { endpoint: FCM_ENDPOINT_1, keys: { p256dh: "key-1", auth: "auth-1" } },
+        JSON.stringify(payload),
+        { TTL: 45, urgency: "high" },
+      );
+    });
+
+    it("solo pasa las opciones que se dieron", async () => {
+      vi.mocked(PushRepository.findByUserIds).mockResolvedValue([
+        { id: "sub-1", userId: "u-1", endpoint: FCM_ENDPOINT_1, p256dh: "key-1", auth: "auth-1" },
+      ] as any);
+      mockSendNotification.mockResolvedValue({});
+
+      await notifyUsers(["u-1"], payload, { urgency: "high" });
+
+      expect(mockSendNotification.mock.calls[0][2]).toEqual({ urgency: "high" });
+    });
+
     it("no envía a filas con endpoint no permitido y las borra", async () => {
       vi.mocked(PushRepository.findByUserIds).mockResolvedValue([
         { id: "sub-viejo", userId: "u-1", endpoint: "https://10.0.0.5:8443/internal", p256dh: "k", auth: "a" },

@@ -4,7 +4,7 @@ import { getLogger } from "../../config/request-context";
 import { BadRequestError } from "../../utils/errors";
 import { isAllowedPushEndpoint } from "./push-endpoint";
 import * as PushRepository from "./push.repository";
-import { PushPayload, SubscribeInput } from "./push.types";
+import { PushDeliveryOptions, PushPayload, SubscribeInput } from "./push.types";
 
 webpush.setVapidDetails(env.VAPID_SUBJECT, env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
 
@@ -50,10 +50,21 @@ export async function unsubscribe(userId: string, endpoint: string): Promise<voi
 /// a diferencia de la room de socket, esto llega con la pestaña cerrada o el
 /// navegador entero cerrado. Nunca lanza: un push que falla no debe tumbar el
 /// envío del mensaje que lo disparó.
-export async function notifyUsers(userIds: string[], payload: PushPayload): Promise<void> {
+export async function notifyUsers(
+  userIds: string[],
+  payload: PushPayload,
+  options?: PushDeliveryOptions,
+): Promise<void> {
   if (userIds.length === 0) return;
   const subscriptions = await PushRepository.findByUserIds(userIds);
   const body = JSON.stringify(payload);
+  // Sin opciones se llama a `web-push` como siempre (TTL y urgencia por defecto).
+  const requestOptions = options
+    ? {
+        ...(options.ttlSeconds !== undefined && { TTL: options.ttlSeconds }),
+        ...(options.urgency !== undefined && { urgency: options.urgency }),
+      }
+    : undefined;
 
   await Promise.all(
     subscriptions.map(async (subscription) => {
@@ -69,10 +80,15 @@ export async function notifyUsers(userIds: string[], payload: PushPayload): Prom
       }
 
       try {
-        await webpush.sendNotification(
-          { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-          body,
-        );
+        const target = {
+          endpoint: subscription.endpoint,
+          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+        };
+        if (requestOptions) {
+          await webpush.sendNotification(target, body, requestOptions);
+        } else {
+          await webpush.sendNotification(target, body);
+        }
       } catch (error) {
         // 404/410: el navegador invalidó esta suscripción (desinstaló el
         // service worker, borró datos del sitio, etc.) — se limpia para no
