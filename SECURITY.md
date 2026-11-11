@@ -113,6 +113,16 @@ ya autenticada. Los dispositivos se borran al cerrar las sesiones de la cuenta, 
 cuando Expo informa que el token ya no vale. Una organización que no quiera que ni siquiera un aviso
 genérico pase por esos servicios puede apagarlo con `MOBILE_PUSH_ENABLED=false`.
 
+### Llamadas: servidores TURN
+
+Las llamadas viajan por WebRTC entre los dos participantes; el servidor solo hace de señalización.
+Para que conecten en datos móviles hace falta un servidor TURN, que **retransmite** el audio y el
+video (cifrados con DTLS-SRTP: el TURN no los puede leer, pero sí ve quién habla con quién y
+cuánto). LINK entrega a cada cuenta con sesión credenciales TURN **temporales** (por defecto 1
+hora, `TURN_SHARED_SECRET`), así una credencial filtrada deja de servir sola. Configura coturn con
+`denied-peer-ip` para las redes internas: un TURN abierto puede usarse como puente hacia ellas.
+Ver `backend/src/modules/calls/README.md`.
+
 ### Vinculación de apps móviles
 
 El diálogo "Conectar app móvil" de la web muestra la dirección de la instalación y un QR con

@@ -1212,6 +1212,24 @@ Lo que Expo entrega al teléfono, por cada mensaje nuevo para alguien que no tie
 
 ---
 
+### 16.2 Servidores ICE de las llamadas
+
+`GET /api/v1/calls/ice-servers` (requiere sesión) → `200`:
+
+```json
+{
+  "iceServers": [
+    { "urls": ["stun:stun.l.google.com:19302"] },
+    { "urls": ["turn:turn.empresa.com:3478?transport=udp"], "username": "1762857600:<userId>", "credential": "<base64>" }
+  ],
+  "ttlSeconds": 3600
+}
+```
+
+Los clientes (web y app móvil) los piden al iniciar o contestar una llamada y arman con ellos su `RTCPeerConnection`; si no se pueden pedir, usan los STUN públicos de siempre. Sin configurar nada, la respuesta son esos mismos STUN y no hay TURN. Con `TURN_URLS` y `TURN_SHARED_SECRET` (coturn `use-auth-secret`) las credenciales son **temporales y por usuario** (`ttlSeconds`, `TURN_CREDENTIAL_TTL_SECONDS`, 1 hora por defecto); con `TURN_USERNAME` y `TURN_PASSWORD`, una credencial fija. El secreto compartido nunca viaja en la respuesta. Solo se aceptan URLs `stun:`, `stuns:`, `turn:` y `turns:`. Responde con `Cache-Control: no-store`; rate limit: `429` tras 60 solicitudes en 15 minutos por cuenta. Ver [`calls/README.md`](./src/modules/calls/README.md).
+
+---
+
 ## 17. Identificación de la instalación (apps móviles)
 
 ### `GET /api/v1/instance`

@@ -20,14 +20,8 @@ import {
   stopAllTones,
 } from "../utils/call-tones";
 import { acquireLocalMedia, classifyMediaError, type MediaWarning } from "../utils/call-media";
-
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-  ],
-};
+import { getIceServers } from "../api/calls.api";
+import { DEFAULT_RTC_CONFIG, loadRtcConfig } from "../utils/ice-servers";
 
 /**
  * Traza del ciclo de vida de una llamada (solo transiciones relevantes, no por-candidato).
@@ -44,6 +38,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const { socket } = useSocket();
   const { session } = useAuth();
   const currentUserId = session?.user?.internalUserId;
+  const token = session?.token;
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [activeCall, setActiveCall] = useState<Call | null>(null);
@@ -60,6 +55,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const localStreamRef = useRef<MediaStream | null>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
+  // Servidores STUN/TURN que entrega el backend (credenciales TURN temporales): se piden al empezar
+  // o contestar cada llamada. Hasta entonces (o si no se pueden pedir), los de respaldo.
+  const rtcConfigRef = useRef<RTCConfiguration>(DEFAULT_RTC_CONFIG);
   // Copia síncrona de activeCall: los handlers de socket/WebRTC no pueden esperar a un re-render.
   const activeCallRef = useRef<Call | null>(null);
   // Lo mismo para el estado: `call:sync` y los temporizadores deciden con el estado de ahora, no con
@@ -135,13 +133,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [socket, handleCallEndedLocally],
   );
 
+  // Pide la configuración ICE sin demorar la llamada; nunca falla.
+  const refreshRtcConfig = useCallback(async () => {
+    rtcConfigRef.current = token ? await loadRtcConfig(() => getIceServers(token)) : DEFAULT_RTC_CONFIG;
+  }, [token]);
+
   // Inicializar o crear RTCPeerConnection
   const getOrCreatePeerConnection = useCallback((targetUserId: string, callId: string) => {
     if (pcRef.current && pcRef.current.signalingState !== "closed") {
       return pcRef.current;
     }
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(rtcConfigRef.current);
     pcRef.current = pc;
     callLog("pc created", { callId });
 
@@ -279,7 +282,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setCallOutcome(null);
       try {
         // Pide micrófono/cámara; si el equipo no los tiene, sigue en modo solo-recepción
-        const { stream, warning } = await acquireLocalMedia(type);
+        const [{ stream, warning }] = await Promise.all([acquireLocalMedia(type), refreshRtcConfig()]);
         localStreamRef.current = stream;
         setLocalStream(stream);
         setMediaWarning(warning);
@@ -309,7 +312,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallError(classifyMediaError(err));
       }
     },
-    [socket, currentUserId, callState, handleCallEndedLocally, updateActiveCall],
+    [socket, currentUserId, callState, handleCallEndedLocally, updateActiveCall, refreshRtcConfig],
   );
 
   // 2. Aceptar llamada entrante
@@ -321,7 +324,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       stopAllTones();
       setCallError(null);
 
-      const { stream, warning } = await acquireLocalMedia(activeCall.type);
+      const [{ stream, warning }] = await Promise.all([acquireLocalMedia(activeCall.type), refreshRtcConfig()]);
       localStreamRef.current = stream;
       setLocalStream(stream);
       setMediaWarning(warning);
@@ -351,7 +354,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       handleCallEndedLocally();
       setCallError(classifyMediaError(err));
     }
-  }, [socket, activeCall, getOrCreatePeerConnection, handleCallEndedLocally, updateActiveCall]);
+  }, [socket, activeCall, getOrCreatePeerConnection, handleCallEndedLocally, updateActiveCall, refreshRtcConfig]);
 
   // 3. Rechazar llamada
   const rejectCall = useCallback(
