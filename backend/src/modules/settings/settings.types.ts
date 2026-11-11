@@ -30,6 +30,8 @@ export type UpdateSettingsInput = Partial<
     | "allowMessageDeleteForEveryone"
     | "messageDeleteForEveryoneTimeLimitMinutes"
     | "allowStickersAndGifs"
+    | "allowMobileApp"
+    | "organizationName"
     | "uploadCleanupEnabled"
     | "orphanFileRetentionHours"
     | "softDeletedFilePurgeDays"
@@ -109,6 +111,11 @@ export interface PublicAppSettingsDTO {
   /// sin depender de un fetch aparte; la autoridad real sigue siendo
   /// giphy.service.ts, que rechaza /v1/giphy/* con 403 si está en false.
   allowStickersAndGifs: boolean;
+  /// La web lo usa para ofrecer (o no) "Conectar app móvil". Si es false ni siquiera
+  /// aparece. La autoridad para la app es `GET /v1/instance` (`features.mobileApp`).
+  allowMobileApp: boolean;
+  /// El que escribió un admin, o null. Ya es público por `GET /v1/instance`.
+  organizationName: string | null;
 }
 
 /// Las 6 dimensiones de gobierno de grupo que pueden tener un override por

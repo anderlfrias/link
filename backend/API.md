@@ -1019,7 +1019,7 @@ Requieren rol `"admin"` en `roles` (ver sección 2) — `403` si no lo tenés. `
 }
 ```
 
-`PATCH` acepta cualquier subconjunto de esos campos (al menos uno) y devuelve el objeto completo actualizado. `localSessionTtlHours` (1 a 720) es la duración de la sesión de LINK, con cualquier proveedor de autenticación (el nombre es histórico), y bajarla corta también las sesiones abiertas que la superan. Las contraseñas solo aplican con cuentas locales: con un proveedor externo, los campos de la política (`passwordMinLength`, `passwordRequire*`, `passwordExpirationDays`, `passwordHistoryCount`, `maxFailedLoginAttempts` y `lockoutDurationMinutes`) se rechazan con `400` y `code: "local_auth_setting_not_applicable"`, con la lista en `fields`. `passwordMinLength` (8 a 128; el piso de 8 no se puede bajar) y los cuatro `passwordRequire*` son la política de contraseñas, que se aplica en el próximo login de cada cuenta. `passwordExpirationDays` (1 a 365, `null` = no vencen), `passwordHistoryCount` (0 a 12, contando la actual), `maxFailedLoginAttempts` (3 a 50, `null` = sin bloqueo) y `lockoutDurationMinutes` (1 a 1440) completan la política, todos apagados por defecto. `maxFilesPerMessage` (default `10`, a diferencia del resto de los límites de esta sección) acota cuántos `fileIds` puede traer un `POST /conversations/:id/messages` (ver 6.1) — `null` lo deshabilita (sin límite). `messageRetentionDays: null` (default) deshabilita el borrado automático de mensajes — un número de días lo activa. Los `allowGroupOverride*` (default `false` los 5) habilitan que cada `GROUP` fije su propio valor para la dimensión correspondiente, vía `PATCH /conversations/:id/settings` (ver 4.9) — ver [`settings/README.md`](./src/modules/settings/README.md). `allowMessageEdit`/`allowMessageDeleteForEveryone` (default `true`) habilitan que el propio autor edite/borre-para-todos sus mensajes; `messageEditTimeLimitMinutes`/`messageDeleteForEveryoneTimeLimitMinutes` (default `null` = sin límite) acotan esa ventana a N minutos desde el envío — hechas cumplir por `PATCH`/`DELETE /conversations/:id/messages/:id` (ver 6.3/6.5), nunca por el creador de la conversación borrando un mensaje ajeno (eso es moderación, ver [`messages/README.md`](./src/modules/messages/README.md)). `allowConversationDelete`/`allowGroupDelete` (default `true`) habilitan "Eliminar chat" (`PRIVATE`, "para mí") y "Eliminar grupo" (`GROUP`, para todos) respectivamente — ver 4.7; `allowGroupDelete` es el interruptor maestro que se chequea antes de `whoCanDeleteGroup`. `allowStickersAndGifs` (default `true`) es el interruptor maestro del buscador de GIFs/stickers (sección 6.1.2) — `403` en `/v1/giphy/*` si está en `false`, sin importar si `GIPHY_API_KEY` está configurada.
+`PATCH` acepta cualquier subconjunto de esos campos (al menos uno) y devuelve el objeto completo actualizado. `localSessionTtlHours` (1 a 720) es la duración de la sesión de LINK, con cualquier proveedor de autenticación (el nombre es histórico), y bajarla corta también las sesiones abiertas que la superan. Las contraseñas solo aplican con cuentas locales: con un proveedor externo, los campos de la política (`passwordMinLength`, `passwordRequire*`, `passwordExpirationDays`, `passwordHistoryCount`, `maxFailedLoginAttempts` y `lockoutDurationMinutes`) se rechazan con `400` y `code: "local_auth_setting_not_applicable"`, con la lista en `fields`. `passwordMinLength` (8 a 128; el piso de 8 no se puede bajar) y los cuatro `passwordRequire*` son la política de contraseñas, que se aplica en el próximo login de cada cuenta. `passwordExpirationDays` (1 a 365, `null` = no vencen), `passwordHistoryCount` (0 a 12, contando la actual), `maxFailedLoginAttempts` (3 a 50, `null` = sin bloqueo) y `lockoutDurationMinutes` (1 a 1440) completan la política, todos apagados por defecto. `maxFilesPerMessage` (default `10`, a diferencia del resto de los límites de esta sección) acota cuántos `fileIds` puede traer un `POST /conversations/:id/messages` (ver 6.1) — `null` lo deshabilita (sin límite). `messageRetentionDays: null` (default) deshabilita el borrado automático de mensajes — un número de días lo activa. Los `allowGroupOverride*` (default `false` los 5) habilitan que cada `GROUP` fije su propio valor para la dimensión correspondiente, vía `PATCH /conversations/:id/settings` (ver 4.9) — ver [`settings/README.md`](./src/modules/settings/README.md). `allowMessageEdit`/`allowMessageDeleteForEveryone` (default `true`) habilitan que el propio autor edite/borre-para-todos sus mensajes; `messageEditTimeLimitMinutes`/`messageDeleteForEveryoneTimeLimitMinutes` (default `null` = sin límite) acotan esa ventana a N minutos desde el envío — hechas cumplir por `PATCH`/`DELETE /conversations/:id/messages/:id` (ver 6.3/6.5), nunca por el creador de la conversación borrando un mensaje ajeno (eso es moderación, ver [`messages/README.md`](./src/modules/messages/README.md)). `allowConversationDelete`/`allowGroupDelete` (default `true`) habilitan "Eliminar chat" (`PRIVATE`, "para mí") y "Eliminar grupo" (`GROUP`, para todos) respectivamente — ver 4.7; `allowGroupDelete` es el interruptor maestro que se chequea antes de `whoCanDeleteGroup`. `allowStickersAndGifs` (default `true`) es el interruptor maestro del buscador de GIFs/stickers (sección 6.1.2) — `403` en `/v1/giphy/*` si está en `false`, sin importar si `GIPHY_API_KEY` está configurada. `allowMobileApp` (default `false`: solo un admin lo habilita) es si la organización acepta el uso de la app móvil: apagado, la web no ofrece "Conectar app móvil" y `GET /api/v1/instance` informa `features.mobileApp: false`, con lo que la app se niega a vincularse (sección 17). `organizationName` (texto de hasta 80 caracteres, sin caracteres de control, con los espacios recortados; `null` o vacío lo borra) es el nombre que ve quien vincula la app. **Es público**: lo devuelve `GET /api/v1/instance` sin autenticación.
 
 ### 12.2 `GET /settings/public` — cualquier autenticado
 
@@ -1038,9 +1038,13 @@ Subconjunto de solo lectura, sin requerir rol admin — lo que un cliente necesi
   "messageDeleteForEveryoneTimeLimitMinutes": null,
   "allowConversationDelete": true,
   "allowGroupDelete": true,
-  "allowStickersAndGifs": true
+  "allowStickersAndGifs": true,
+  "allowMobileApp": false,
+  "organizationName": null
 }
 ```
+
+`allowMobileApp` dice si un admin habilitó el uso de la app móvil: con `false` la web ni siquiera ofrece "Conectar app móvil". `organizationName` es el nombre que un admin escribió para la organización (`null` si no hay).
 
 `maxUploadSizeMb` es el máximo **efectivo** de un archivo, no necesariamente el configurado en 12.1: con almacenamiento S3 (`STORAGE_WRITE_PROVIDER=S3`) es el configurado, y sin S3 es como mucho **32 MB** (el techo del camino directo, `POST /api/v1/files`), porque la subida por partes (sección 10) solo existe con S3. `chunkedUploads` dice si esa subida por partes está disponible: con `false`, un cliente tiene que mandar todo archivo por el camino directo (y `POST /api/v1/uploads` responde `503` con `code: "chunked_uploads_unavailable"`). El valor configurado, sin ajustar, sigue en `GET /admin/settings`.
 
@@ -1237,14 +1241,21 @@ Los clientes (web y app móvil) los piden al iniciar o contestar una llamada y a
 Público, sin token. Le permite a una app que todavía no tiene sesión confirmar que detrás de esta URL hay un LINK y que lo puede usar, antes de pedir credenciales. Ver [`instance/README.md`](./src/modules/instance/README.md).
 
 ```json
-{ "app": "link", "mobileApi": 1, "features": { "mobilePush": true } }
+{
+  "app": "link",
+  "mobileApi": 1,
+  "organizationName": "Clínica del Sol",
+  "features": { "mobileApp": true, "mobilePush": true }
+}
 ```
 
 - `app`: siempre `"link"`.
 - `mobileApi`: nivel de compatibilidad del API para apps móviles. Es un entero propio, **no** la versión del backend: sube solo cuando un cambio rompe a una app ya publicada. La app lo compara con el rango que soporta.
+- `organizationName`: el nombre de la organización que escribió un admin (`AppSettings.organizationName`), o `null`. Es lo que la app muestra al vincularse, en lugar de una dirección técnica. Es público a propósito: un admin lo escribe para que se vea.
+- `features.mobileApp`: si la organización acepta el uso de la app móvil (`AppSettings.allowMobileApp`, apagado por defecto). Con `false`, la app se niega a vincularse. No bloquea el inicio de sesión de un cliente ya vinculado: controla la vinculación y la opción de la web.
 - `features.mobilePush`: si esta instalación envía notificaciones push a apps móviles (`MOBILE_PUSH_ENABLED`, activo por defecto; ver sección 16.1).
 
-No devuelve la versión del backend ni ningún dato de la instalación o de sus cuentas. Responde con `Cache-Control: no-store`. Rate limit: `429` tras 120 solicitudes en 15 minutos desde la misma IP.
+No devuelve la versión del backend ni datos de sus cuentas; el nombre de la organización sí, porque un admin lo escribió para mostrarse. Responde con `Cache-Control: no-store`. Rate limit: `429` tras 120 solicitudes en 15 minutos desde la misma IP.
 
 ### Cómo llega una app hasta acá
 

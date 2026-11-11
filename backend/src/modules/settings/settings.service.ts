@@ -75,6 +75,8 @@ export async function getPublicSettings(): Promise<PublicAppSettingsDTO> {
     // desactivado la opción. GIPHY queda así deshabilitado por configuración
     // (ver modules/giphy/README.md, "Requisitos de GIPHY").
     allowStickersAndGifs: settings.allowStickersAndGifs && Boolean(env.GIPHY_API_KEY),
+    allowMobileApp: settings.allowMobileApp,
+    organizationName: settings.organizationName,
   };
 }
 

@@ -723,6 +723,16 @@ model AppSettings {
   /// apague; igual requiere GIPHY_API_KEY configurada para funcionar de verdad.
   allowStickersAndGifs Boolean @default(true) @map("allow_stickers_and_gifs")
 
+  /// Si la organización acepta el uso de la app móvil. Default false: solo un admin
+  /// lo habilita. Apagado, la web ni siquiera ofrece "Conectar app móvil" y
+  /// `GET /v1/instance` informa `features.mobileApp: false`, con lo que la app se
+  /// niega a vincularse (ver modules/instance/README.md).
+  allowMobileApp Boolean @default(false) @map("allow_mobile_app")
+  /// Nombre de la organización que ve la persona al vincular la app (en lugar de una
+  /// dirección técnica). Lo escribe un admin y es PÚBLICO: lo devuelve
+  /// `GET /v1/instance` sin autenticación. null = sin nombre (la app muestra el dominio).
+  organizationName String? @map("organization_name")
+
   // Limpieza y ciclo de vida de archivos y sesiones (ver LARGE_FILES_PLAN.md §5.5, §11 Fase 5).
   // Defaults false/null: nunca borra datos sin que un admin lo configure explícitamente.
   /// Interruptor maestro del worker de limpieza.

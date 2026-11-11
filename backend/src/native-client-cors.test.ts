@@ -17,6 +17,12 @@ vi.mock("web-push", () => ({
   WebPushError: class WebPushError extends Error {},
 }));
 
+// `GET /v1/instance` lee los ajustes públicos: acá no hay base de datos.
+vi.mock("./modules/settings/settings.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./modules/settings/settings.service")>()),
+  getPublicSettings: vi.fn().mockResolvedValue({ allowMobileApp: false, organizationName: null }),
+}));
+
 const WEB_ORIGIN = "https://chat.example.com";
 const ORIGINAL_CORS_ORIGIN = process.env.CORS_ORIGIN;
 

@@ -53,6 +53,8 @@ describe("settings.service", () => {
     allowConversationDelete: true,
     maxVoiceNoteDurationSeconds: 120,
     maxGroupMembers: 100,
+    allowMobileApp: false,
+    organizationName: null,
     whoCanCreateGroups: GroupPermissionLevel.ALL_MEMBERS,
     whoCanAddMembers: GroupPermissionLevel.ALL_MEMBERS,
     whoCanRemoveMembers: GroupPermissionLevel.GROUP_ADMINS_ONLY,
@@ -211,6 +213,19 @@ describe("settings.service", () => {
       expect(publicSettings.allowStickersAndGifs).toBe(false);
     });
 
+    it("exposes whether the mobile app is allowed and the organization name an admin wrote", async () => {
+      vi.mocked(SettingsRepository.getOrCreate).mockResolvedValue({
+        ...defaultMockSettings,
+        allowMobileApp: true,
+        organizationName: "Clínica del Sol",
+      });
+
+      const publicSettings = await getPublicSettings();
+
+      expect(publicSettings.allowMobileApp).toBe(true);
+      expect(publicSettings.organizationName).toBe("Clínica del Sol");
+    });
+
     it("exposes only the allowed public DTO fields and omits administrative/sensitive fields", async () => {
       vi.mocked(SettingsRepository.getOrCreate).mockResolvedValue(defaultMockSettings);
 
@@ -230,6 +245,8 @@ describe("settings.service", () => {
         allowConversationDelete: true,
         allowGroupDelete: true,
         allowStickersAndGifs: true,
+        allowMobileApp: false,
+        organizationName: null,
       });
 
       const raw = publicSettings as any;

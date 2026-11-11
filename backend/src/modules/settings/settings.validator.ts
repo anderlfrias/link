@@ -7,6 +7,9 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH_FLOOR } from "../auth/password
 // una extensión como ".pdf" en vez de "application/pdf" nunca matchea contra
 // `upload.mimetype` y deja el allowlist/blocklist roto en silencio: un
 // ALLOWLIST así bloquea todo, un BLOCKLIST así no bloquea nada.
+/// Largo máximo del nombre de la organización (se muestra en la confirmación de la app).
+export const ORGANIZATION_NAME_MAX_LENGTH = 80;
+
 const MIME_TYPE_PATTERN = /^[a-z0-9][a-z0-9.+-]*\/(\*|[a-z0-9][a-z0-9.+-]*)$/i;
 
 /// Ajustes de las contraseñas y las cuentas locales: no significan nada con un proveedor de
@@ -62,6 +65,16 @@ export const updateSettingsSchema = yup
     allowMessageDeleteForEveryone: yup.boolean(),
     messageDeleteForEveryoneTimeLimitMinutes: yup.number().integer().min(1).nullable(),
     allowStickersAndGifs: yup.boolean(),
+    allowMobileApp: yup.boolean(),
+    // Se muestra tal cual a quien vincula la app, sin autenticarse: sin saltos de línea ni
+    // caracteres de control (un nombre no es un mensaje). Vacío = sin nombre (`null`).
+    organizationName: yup
+      .string()
+      .transform((value) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : value))
+      .transform((value) => (value === "" ? null : value))
+      .max(ORGANIZATION_NAME_MAX_LENGTH)
+      .matches(/^[^\p{Cc}\p{Cf}]*$/u, "organizationName must not contain control characters")
+      .nullable(),
     uploadCleanupEnabled: yup.boolean(),
     orphanFileRetentionHours: yup.number().integer().min(1).nullable(),
     softDeletedFilePurgeDays: yup.number().integer().min(1).nullable(),
@@ -116,6 +129,8 @@ export const updateSettingsSchema = yup
       value.allowMessageDeleteForEveryone !== undefined ||
       value.messageDeleteForEveryoneTimeLimitMinutes !== undefined ||
       value.allowStickersAndGifs !== undefined ||
+      value.allowMobileApp !== undefined ||
+      value.organizationName !== undefined ||
       value.uploadCleanupEnabled !== undefined ||
       value.orphanFileRetentionHours !== undefined ||
       value.softDeletedFilePurgeDays !== undefined ||
