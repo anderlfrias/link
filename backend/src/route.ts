@@ -4,6 +4,7 @@ import authRoutes from "./modules/auth/auth.route";
 import conversationRoutes from "./modules/conversations/conversation.route";
 import fileRoutes, { adminFileRouter } from "./modules/files/file.route";
 import giphyRoutes from "./modules/giphy/giphy.route";
+import instanceRoutes from "./modules/instance/instance.route";
 import messageRoutes from "./modules/messages/message.route";
 import pushRoutes from "./modules/push/push.route";
 import { adminSettingsRouter, publicSettingsRouter } from "./modules/settings/settings.route";
@@ -14,6 +15,8 @@ const router = Router();
 
 // Módulo público / con auth manejada dentro (login, con cuentas locales o con un proveedor externo) → se monta tal cual.
 router.use("/v1/auth", authRoutes);
+// Público: identifica a la instalación ante una app que todavía no tiene sesión.
+router.use("/v1/instance", instanceRoutes);
 // authenticate + attachInternalUser se aplican dentro de conversation.route.ts.
 router.use("/v1/conversations", conversationRoutes);
 // Anidado bajo su conversación: ningún mensaje existe fuera de una. Debe montarse

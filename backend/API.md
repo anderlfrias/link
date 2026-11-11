@@ -1212,3 +1212,28 @@ Lo que Expo entrega al teléfono, por cada mensaje nuevo para alguien que no tie
 
 ---
 
+## 17. Identificación de la instalación (apps móviles)
+
+### `GET /api/v1/instance`
+
+Público, sin token. Le permite a una app que todavía no tiene sesión confirmar que detrás de esta URL hay un LINK y que lo puede usar, antes de pedir credenciales. Ver [`instance/README.md`](./src/modules/instance/README.md).
+
+```json
+{ "app": "link", "mobileApi": 1, "features": { "mobilePush": true } }
+```
+
+- `app`: siempre `"link"`.
+- `mobileApi`: nivel de compatibilidad del API para apps móviles. Es un entero propio, **no** la versión del backend: sube solo cuando un cambio rompe a una app ya publicada. La app lo compara con el rango que soporta.
+- `features.mobilePush`: si esta instalación envía notificaciones push a apps móviles (`MOBILE_PUSH_ENABLED`, activo por defecto; ver sección 16.1).
+
+No devuelve la versión del backend ni ningún dato de la instalación o de sus cuentas. Responde con `Cache-Control: no-store`. Rate limit: `429` tras 120 solicitudes en 15 minutos desde la misma IP.
+
+### Cómo llega una app hasta acá
+
+LINK es auto-hospedado, así que una app no conoce de antemano la dirección del API. El recorrido es:
+
+1. La persona le da a la app la **URL del sitio web** (escrita, o con el QR del diálogo "Conectar app móvil" de la web, que lleva `linkapp://connect?url=<URL del sitio>`).
+2. La app pide `GET <URL del sitio>/.well-known/link-app.json`, que sirve el frontend: `{ "app": "link", "v": 1, "apiUrl": "https://…/api", "socketUrl": "https://…" }` (los mismos valores de `NEXT_PUBLIC_API_URL` y `NEXT_PUBLIC_SOCKET_URL`).
+3. La app pide `GET <apiUrl>/v1/instance` y, si todo coincide, sigue con `GET /v1/auth/config` y `POST /v1/auth/login` (sección 2).
+
+Un cliente nativo no manda la cabecera `Origin`, así que `CORS_ORIGIN` no lo afecta: CORS lo aplica el navegador y no es un control de acceso del servidor (ver `backend/src/native-client-cors.test.ts`).

@@ -102,6 +102,20 @@ export const loginUserRateLimiter = rateLimit({
   message: TOO_MANY_ATTEMPTS_MESSAGE,
 });
 
+// `GET /v1/instance` (ver modules/instance/README.md): ruta pública que una app
+// consulta una vez, al vincularse con esta instalación. Por IP, porque todavía
+// no hay cuenta. 120 cada 15 minutos alcanza para una oficina entera detrás del
+// mismo NAT vinculando sus teléfonos el mismo día, y la ruta no toca la base:
+// el límite solo evita usarla para generar tráfico.
+export const instanceInfoRateLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req) ?? "unknown",
+  message: { error: "Demasiadas solicitudes. Esperá unos minutos y volvé a intentar." },
+});
+
 // Alta y baja de dispositivos móviles para push (`/v1/push/devices`). Cada inicio de
 // sesión en la app registra uno y cada cierre lo da de baja; 30 cada 15 minutos por
 // cuenta cubre cambiar de cuenta muchas veces en un mismo teléfono y acota el abuso.
