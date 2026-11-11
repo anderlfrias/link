@@ -63,6 +63,13 @@ catálogo.
 [`boring-avatars`](https://github.com/boringdesigners/boring-avatars), bajo MIT. Lo usa
 `frontend/src/features/profile/components/BoringAvatarPicker.tsx`.
 
+## Código QR: qrcode-generator
+
+[`qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator), de Kazuhiko Arase, bajo MIT.
+Genera el código QR del diálogo "Conectar app móvil"
+(`frontend/src/features/mobile-app/utils/qr-matrix.ts`). "QR Code" es una marca registrada de
+DENSO WAVE INCORPORATED.
+
 ## Íconos: Tabler Icons
 
 [`@tabler/icons-react`](https://tabler.io/icons), bajo MIT.

@@ -3,20 +3,10 @@
 import { useCallback, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { forwardMessage } from "@/features/messages/api/messages.api";
-import { createConversation, getOrCreateSelfChat } from "@/features/conversations/api/conversations.api";
+import { resolveChatTargetConversationId, type ChatTarget } from "@/features/conversations/utils/chat-target";
 
-/** Destino de un reenvío: una conversación existente, "self" (resuelve/crea
- * "Mensajes guardados"), o un contacto sin chat todavía (crea — o reusa, si
- * ya existía — la conversación PRIVATE con esa persona) — ver ForwardMessageModal. */
-export type ForwardTarget = { conversationId: string } | { userId: string } | "self";
-
-async function resolveConversationId(target: ForwardTarget, token: string): Promise<string> {
-  if (target === "self") return (await getOrCreateSelfChat(token)).id;
-  if ("userId" in target) {
-    return (await createConversation(token, { type: "PRIVATE", memberIds: [target.userId] })).id;
-  }
-  return target.conversationId;
-}
+/** Destino de un reenvío — ver `ChatTarget` y ForwardMessageModal. */
+export type ForwardTarget = ChatTarget;
 
 export function useForwardMessage() {
   const { session } = useAuth();
@@ -36,7 +26,7 @@ export function useForwardMessage() {
       setError(null);
       const results = await Promise.allSettled(
         targets.map(async (target) => {
-          const conversationId = await resolveConversationId(target, session.token);
+          const conversationId = await resolveChatTargetConversationId(target, session.token);
           await forwardMessage(session.token, conversationId, messageId);
         }),
       );
@@ -67,7 +57,7 @@ export function useForwardMessage() {
 
       for (const target of targets) {
         try {
-          const conversationId = await resolveConversationId(target, session.token);
+          const conversationId = await resolveChatTargetConversationId(target, session.token);
           let targetHasFailures = false;
           for (const msgId of messageIds) {
             try {

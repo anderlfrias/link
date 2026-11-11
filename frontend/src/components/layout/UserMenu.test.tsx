@@ -15,6 +15,17 @@ vi.mock("@/features/auth/hooks/use-profile-picture", () => ({
   useProfilePicture: vi.fn(),
 }));
 
+// El diálogo tiene sus propios tests (ConnectMobileAppModal.test.tsx).
+vi.mock("@/features/mobile-app/components/ConnectMobileAppModal", () => ({
+  ConnectMobileAppModal: ({ onClose }: { onClose: () => void }) => (
+    <div role="dialog" aria-label="Conectar app móvil">
+      <button type="button" onClick={onClose}>
+        cerrar diálogo
+      </button>
+    </div>
+  ),
+}));
+
 describe("UserMenu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -162,4 +173,30 @@ describe("UserMenu", () => {
     fireEvent.mouseDown(screen.getByTestId("outside"));
     expect(screen.queryByText(mockSession.user.email)).not.toBeInTheDocument();
   });
+
+  it("abre el diálogo Conectar app móvil, para cualquier usuario, y cierra el menú", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      session: createMockSession(),
+      status: "authenticated",
+      login: vi.fn(),
+      logout: vi.fn(),
+      updateSessionUser: vi.fn(),
+      expireSession: vi.fn(),
+      completePasswordChange: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UserMenu onOpenProfileSettings={vi.fn()} />);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Menú de usuario" }));
+    await user.click(screen.getByRole("button", { name: /Conectar app móvil/i }));
+
+    expect(screen.getByRole("dialog", { name: "Conectar app móvil" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Editar perfil/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "cerrar diálogo" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
+
