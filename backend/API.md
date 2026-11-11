@@ -25,7 +25,7 @@ Todo lo demás (adjuntos, recibos, "escribiendo...", editar/borrar, grupos) se a
 
 ### Autenticación HTTP
 
-Todas las rutas salvo `POST /api/v1/auth/login` y `GET /api/v1/auth/config` requieren:
+Todas las rutas salvo `POST /api/v1/auth/login`, `GET /api/v1/auth/config` y `GET /api/v1/instance` (sección 17) requieren:
 
 ```
 Authorization: Bearer <token>
@@ -1190,3 +1190,25 @@ Base HTTP: `/api/v1/push`. Requiere sesión. Las notificaciones llegan aunque la
 - `POST /unsubscribe` — `{ "endpoint": "..." }` → `204`. Solo borra una suscripción de la cuenta que pide la baja; si no es suya o no existe, no hace nada.
 
 Las suscripciones se borran solas cuando el servicio push responde 404/410, cuando el endpoint no pasa la allowlist, y cuando se cierran las sesiones de la cuenta (se desactiva, o se cambia o restablece su contraseña). Una cuenta desactivada no recibe notificaciones. El frontend da de baja la suscripción del navegador al cerrar sesión.
+
+### 16.1 Notificaciones push para la app móvil
+
+Mismo prefijo (`/api/v1/push`) y misma sesión, pero otro canal: el servicio push de Expo (reparte a FCM y APNs). **A diferencia de Web Push, el aviso pasa en claro por Expo, Google y Apple, así que es genérico**: no lleva el texto del mensaje, ni quién lo escribe, ni el nombre del grupo. La app, ya autenticada, trae el contenido desde este servidor.
+
+- `POST /devices` — `{ "token": "ExponentPushToken[...]", "platform": "ios" | "android" }` → `204`. Registra el dispositivo en la cuenta; si otra cuenta había iniciado sesión en ese teléfono, el dispositivo pasa a la nueva. Una cuenta guarda hasta 10 dispositivos (se descartan los más viejos).
+  - `400` si el token no tiene la forma de un token de Expo o falta `platform`.
+  - `404` con `code: "mobile_push_disabled"` si el administrador apagó las notificaciones móviles (`MOBILE_PUSH_ENABLED=false`, también visible en `GET /api/v1/instance`).
+- `DELETE /devices` — `{ "token": "..." }` → `204`. Solo borra un dispositivo de la propia cuenta; si no es suyo o no existe, no hace nada. Funciona aunque las notificaciones móviles estén apagadas (para limpiar lo que quedó).
+- Rate limit: `429` tras 30 solicitudes en 15 minutos por cuenta.
+
+Lo que Expo entrega al teléfono, por cada mensaje nuevo para alguien que no tiene esa conversación abierta:
+
+```json
+{ "title": "LINK", "body": "Tienes un mensaje nuevo", "data": { "type": "message", "conversationId": "<id>" },
+  "sound": "default", "channelId": "messages" }
+```
+
+`body` sale en el idioma de la cuenta (`es` o `en`) y `sound` es `null` si la cuenta apagó el sonido. Los dispositivos se borran solos cuando Expo responde `DeviceNotRegistered`, cuando se cierran las sesiones de la cuenta (se desactiva, o se cambia o restablece su contraseña) y cuando la app los da de baja al cerrar sesión. Una cuenta desactivada no recibe nada.
+
+---
+

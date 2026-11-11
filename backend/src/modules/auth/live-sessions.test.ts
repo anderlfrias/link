@@ -10,9 +10,13 @@ vi.mock("../../socket/rooms", () => ({
 vi.mock("../push/push.repository", () => ({
   deleteByUserId: vi.fn(),
 }));
+vi.mock("../push/mobile-push.repository", () => ({
+  deleteByUserId: vi.fn(),
+}));
 
 import { getIO, isSocketReady } from "../../socket";
 import { disconnectUserSockets } from "../../socket/rooms";
+import * as MobilePushRepository from "../push/mobile-push.repository";
 import * as PushRepository from "../push/push.repository";
 import { endLiveSessions } from "./live-sessions";
 
@@ -20,6 +24,7 @@ describe("endLiveSessions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(PushRepository.deleteByUserId).mockResolvedValue({ count: 1 } as any);
+    vi.mocked(MobilePushRepository.deleteByUserId).mockResolvedValue({ count: 1 } as any);
   });
 
   it("borra las suscripciones push del usuario aunque no haya Socket.IO (CLI)", () => {
@@ -29,6 +34,15 @@ describe("endLiveSessions", () => {
 
     expect(PushRepository.deleteByUserId).toHaveBeenCalledWith("u-1");
     expect(disconnectUserSockets).not.toHaveBeenCalled();
+  });
+
+  it("también da de baja los dispositivos móviles: dejan de recibir avisos tras revocar la sesión", async () => {
+    vi.mocked(isSocketReady).mockReturnValue(false);
+
+    endLiveSessions("u-1");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(MobilePushRepository.deleteByUserId).toHaveBeenCalledWith("u-1");
   });
 
   it("corta los sockets del usuario cuando hay Socket.IO", () => {

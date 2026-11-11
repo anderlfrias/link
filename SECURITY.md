@@ -100,6 +100,14 @@ servicio no puede suscribirse hasta que se agregue su dominio en
 las suscripciones de una cuenta al desactivarla o al restablecer su contraseña, y el frontend da de
 baja la del navegador al cerrar sesión.
 
+La app móvil usa otro canal: el servicio push de Expo (`https://exp.host/--/api/v2/push/send`, un
+host fijo en el código, así que no hay riesgo de SSRF). Ese aviso pasa **en claro** por Expo,
+Google y Apple, por eso es genérico ("Tienes un mensaje nuevo" y el id de la conversación): nunca
+lleva el texto del mensaje, el nombre de quien escribe ni el del grupo. El contenido lo trae la app
+ya autenticada. Los dispositivos se borran al cerrar las sesiones de la cuenta, al desactivarla y
+cuando Expo informa que el token ya no vale. Una organización que no quiera que ni siquiera un aviso
+genérico pase por esos servicios puede apagarlo con `MOBILE_PUSH_ENABLED=false`.
+
 ## Limitaciones conocidas
 
 Cosas que LINK hace así a propósito, o que todavía no resuelve. No son vulnerabilidades por

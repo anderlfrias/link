@@ -8,6 +8,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Añadido
+- **Notificaciones push para la app móvil**: `POST` y `DELETE /api/v1/push/devices` registran y dan de baja el dispositivo (tabla nueva `mobile_push_devices`, con migración), y el backend avisa de cada mensaje nuevo por el servicio push de Expo. El aviso es genérico (sin texto del mensaje, remitente ni nombre del grupo) porque pasa en claro por Expo, Google y Apple. Se apaga con `MOBILE_PUSH_ENABLED=false`, lo que también se refleja en `GET /api/v1/instance`. Web Push no cambia. Ver `backend/API.md`, sección 16.1.
 - **Motivo del cierre de sesión en el log**: cada rechazo de un token (vencido, firma inválida, cuenta desactivada, sesión revocada o más vieja que la duración vigente) deja una línea `info` con el motivo, la edad del token y la duración con la que se emitió, y el UUID del usuario; nunca el token ni el correo.
 - El panel de configuración avisa, al subir la duración de la sesión, que no alarga las sesiones ya abiertas: cada usuario tiene que volver a iniciar sesión.
 - **Llamada que suena al abrir la app**: quien recibe una llamada con la app cerrada ya no ve solo una notificación. Al abrir la app (o al recuperar la conexión, o al volver a la pestaña) aparece la llamada para contestarla o rechazarla, mientras siga sonando.
@@ -16,6 +17,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 - Documentación del módulo de llamadas: `backend/src/modules/calls/README.md`.
 
 ### Cambiado
+- El selector de chats del reenvío de mensajes pasa a un componente compartido (`ChatTargetPicker`), que ahora también usa "Compartir en LINK" del diálogo de la app móvil. Reenviar funciona igual que antes.
 - **Panel de administración reorganizado y adaptado a móvil**: la configuración global deja de ser un solo scroll y pasa a seis secciones agrupadas por tema (Mensajes, Grupos, Archivos adjuntos, Retención de datos, Almacenamiento y Seguridad), con la lista y el detalle lado a lado en escritorio y, en móvil, la lista de ajustes con navegación al detalle y flecha para volver, como en los ajustes de WhatsApp o Telegram. Un punto en la lista avisa qué sección tiene cambios sin guardar o errores, y un solo "Guardar cambios" cubre todas. La navegación del panel pasa a una barra de pestañas inferior en móvil, y las filas de Usuarios y Archivos ya no aplastan el nombre en pantallas angostas.
 - **README**: el inicio rápido con Docker y el desarrollo local pasan a pasos numerados, desde clonar el repositorio hasta el primer ingreso. Se agregan la tabla de requisitos por forma de instalación, el detalle de lo que genera `npm run setup`, una sección "Si algo falla" y cómo actualizar, además del logo y una captura de la interfaz (`docs/images/link-chat.png`, con datos de demostración).
 - `docker-compose.yml` y los `.env.example` indican `npm run setup` en lugar de copiar el archivo a mano, y el error de `docker compose` por una variable obligatoria sin definir también lo menciona.

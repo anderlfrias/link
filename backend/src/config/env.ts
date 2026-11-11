@@ -41,6 +41,16 @@ const schema = yup.object({
   VAPID_PUBLIC_KEY: yup.string().required(),
   VAPID_PRIVATE_KEY: yup.string().required(),
   VAPID_SUBJECT: yup.string().required(),
+  // Notificaciones push para la app móvil (servicio de Expo, ver modules/push/README.md).
+  // Activas por defecto; "false" las apaga (por ejemplo, si la organización no quiere que
+  // avisos genéricos pasen por Expo, Google y Apple). No afecta a Web Push. Mismo patrón de
+  // parseo de booleano que TRUST_CF_CONNECTING_IP.
+  MOBILE_PUSH_ENABLED: yup
+    .boolean()
+    .transform((value, originalValue) =>
+      typeof originalValue === "string" ? originalValue.toLowerCase() !== "false" : Boolean(value),
+    )
+    .default(true),
   // Orígenes del frontend que pueden usar la API y el socket (ver
   // config/cors-origins.ts). Fuera de producción es opcional: sin definir,
   // cualquier origen (cómodo en dev/LAN). Con NODE_ENV=production es
