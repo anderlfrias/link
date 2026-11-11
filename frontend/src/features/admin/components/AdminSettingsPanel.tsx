@@ -22,10 +22,12 @@ import { AttachmentsSection } from "@/features/admin/components/settings/Attachm
 import { GroupsSection } from "@/features/admin/components/settings/GroupsSection";
 import { MessagesSection } from "@/features/admin/components/settings/MessagesSection";
 import { RetentionSection } from "@/features/admin/components/settings/RetentionSection";
+import { MobileAppSection } from "@/features/admin/components/settings/MobileAppSection";
 import { SecuritySection } from "@/features/admin/components/settings/SecuritySection";
 import { StorageSection } from "@/features/admin/components/settings/StorageSection";
 import { Button } from "@/components/ui/Button";
 import { useAuthCapabilities } from "@/providers/auth-config-provider";
+import { useRefreshPublicSettings } from "@/providers/public-settings-provider";
 import { useTranslation } from "@/i18n";
 import { cn } from "@/utils/cn";
 
@@ -39,6 +41,7 @@ export function AdminSettingsPanel() {
   const { passwordChange: passwordPolicy } = useAuthCapabilities();
   const { settings, status, error: loadError, refetch } = useAdminSettings();
   const { save, pending, error: saveError } = useUpdateAdminSettings();
+  const refreshPublicSettings = useRefreshPublicSettings();
 
   const [draft, setDraft] = useState<DraftState | null>(null);
   // En desktop siempre hay una sección abierta; en mobile `view` decide si se ve la lista o el detalle.
@@ -85,7 +88,11 @@ export function AdminSettingsPanel() {
   async function handleSave() {
     if (hasErrors || !draft) return;
     const updated = await save(toPayload(draft, passwordPolicy));
-    if (updated) setDraft(toDraft(updated));
+    if (updated) {
+      setDraft(toDraft(updated));
+      // Lo guardado también lo ve el resto de la web (el menú de usuario, el chat): sin recargar.
+      refreshPublicSettings();
+    }
   }
 
   function openSection(id: SettingsSectionId) {
@@ -215,6 +222,7 @@ export function AdminSettingsPanel() {
               {activeSection.id === "attachments" && <AttachmentsSection {...sectionProps} />}
               {activeSection.id === "retention" && <RetentionSection {...sectionProps} />}
               {activeSection.id === "storage" && <StorageSection {...sectionProps} />}
+              {activeSection.id === "mobileApp" && <MobileAppSection {...sectionProps} />}
               {activeSection.id === "security" && (
                 <SecuritySection
                   {...sectionProps}

@@ -47,6 +47,10 @@ export interface AdminSettings {
   messageDeleteForEveryoneTimeLimitMinutes: number | null;
   /** Interruptor maestro del buscador de GIFs/stickers (Giphy). */
   allowStickersAndGifs: boolean;
+  /** Si la organización acepta el uso de la app móvil. Apagado, la web no ofrece "Conectar app móvil" y la app se niega a vincularse. */
+  allowMobileApp: boolean;
+  /** Nombre que ve la persona al vincular la app. Público. `null` = sin nombre. */
+  organizationName: string | null;
   /** Interruptor maestro del worker de limpieza automática de archivos. */
   uploadCleanupEnabled: boolean;
   /** Horas tras las que un archivo sin referencias se borra. `null` = deshabilitado. */

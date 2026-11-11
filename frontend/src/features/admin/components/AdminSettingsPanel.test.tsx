@@ -6,7 +6,7 @@ import { useAdminSettings } from "@/features/admin/hooks/use-admin-settings";
 import { useUpdateAdminSettings } from "@/features/admin/hooks/use-update-admin-settings";
 import type { AdminSettings } from "@/features/admin/types/admin-settings.types";
 import { deriveAuthCapabilities, useAuthCapabilities } from "@/providers/auth-config-provider";
-import { usePublicSettings } from "@/providers/public-settings-provider";
+import { usePublicSettings, useRefreshPublicSettings } from "@/providers/public-settings-provider";
 import { createMockAuthConfig, createMockPublicSettings } from "@/test/test-utils";
 
 vi.mock("@/features/admin/hooks/use-admin-settings", () => ({
@@ -21,7 +21,10 @@ vi.mock("@/providers/auth-config-provider", async (importOriginal) => ({
 
 vi.mock("@/providers/public-settings-provider", () => ({
   usePublicSettings: vi.fn(),
+  useRefreshPublicSettings: vi.fn(),
 }));
+
+const mockRefreshPublicSettings = vi.fn();
 
 function mockProvider(kind: "local" | "external") {
   vi.mocked(useAuthCapabilities).mockReturnValue(deriveAuthCapabilities(createMockAuthConfig(kind)));
@@ -74,6 +77,8 @@ describe("AdminSettingsPanel", () => {
     allowMessageDeleteForEveryone: true,
     messageDeleteForEveryoneTimeLimitMinutes: 60,
     allowStickersAndGifs: true,
+    allowMobileApp: false,
+    organizationName: null,
     uploadCleanupEnabled: false,
     orphanFileRetentionHours: null,
     softDeletedFilePurgeDays: null,
@@ -99,6 +104,7 @@ describe("AdminSettingsPanel", () => {
     vi.clearAllMocks();
     mockProvider("external");
     vi.mocked(usePublicSettings).mockReturnValue(null);
+    vi.mocked(useRefreshPublicSettings).mockReturnValue(mockRefreshPublicSettings);
     vi.mocked(useUpdateAdminSettings).mockReturnValue({
       save: mockSave,
       pending: false,
@@ -238,6 +244,99 @@ describe("AdminSettingsPanel", () => {
         maxUploadSizeMb: 50,
       }),
     );
+  });
+
+  it("permite habilitar la app móvil y ponerle nombre a la organización, y lo guarda", async () => {
+    vi.mocked(useAdminSettings).mockReturnValue({
+      settings: defaultSettings,
+      status: "ready",
+      error: null,
+      refetch: mockRefetch,
+    });
+    mockSave.mockResolvedValueOnce({ ...defaultSettings, allowMobileApp: true, organizationName: "Clínica del Sol" });
+
+    const user = userEvent.setup();
+    render(<AdminSettingsPanel />);
+
+    await openSection(user, "App móvil");
+    const allow = screen.getByRole("checkbox", { name: "La organización acepta el uso de la app móvil" });
+    expect(allow).not.toBeChecked();
+    await user.click(allow);
+    await user.type(screen.getByLabelText("Nombre que se muestra al vincular la app"), "  Clínica   del Sol ");
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(mockSave).toHaveBeenCalledWith(
+      expect.objectContaining({ allowMobileApp: true, organizationName: "Clínica del Sol" }),
+    );
+  });
+
+  it("al guardar, vuelve a pedir la configuración pública para que el resto de la web la vea sin recargar", async () => {
+    vi.mocked(useAdminSettings).mockReturnValue({
+      settings: defaultSettings,
+      status: "ready",
+      error: null,
+      refetch: mockRefetch,
+    });
+    mockSave.mockResolvedValueOnce({ ...defaultSettings, allowMobileApp: true });
+
+    const user = userEvent.setup();
+    render(<AdminSettingsPanel />);
+    await openSection(user, "App móvil");
+    await user.click(screen.getByRole("checkbox", { name: "La organización acepta el uso de la app móvil" }));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(mockRefreshPublicSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("si no se pudo guardar, no se vuelve a pedir", async () => {
+    vi.mocked(useAdminSettings).mockReturnValue({
+      settings: defaultSettings,
+      status: "ready",
+      error: null,
+      refetch: mockRefetch,
+    });
+    mockSave.mockResolvedValueOnce(null);
+
+    const user = userEvent.setup();
+    render(<AdminSettingsPanel />);
+    await openSection(user, "App móvil");
+    await user.click(screen.getByRole("checkbox", { name: "La organización acepta el uso de la app móvil" }));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(mockRefreshPublicSettings).not.toHaveBeenCalled();
+  });
+
+  it("avisa que el nombre de la organización es público", async () => {
+    vi.mocked(useAdminSettings).mockReturnValue({
+      settings: defaultSettings,
+      status: "ready",
+      error: null,
+      refetch: mockRefetch,
+    });
+
+    const user = userEvent.setup();
+    render(<AdminSettingsPanel />);
+    await openSection(user, "App móvil");
+
+    expect(screen.getByText(/Es público/)).toBeInTheDocument();
+  });
+
+  it("un nombre vacío se guarda como sin nombre (null)", async () => {
+    vi.mocked(useAdminSettings).mockReturnValue({
+      settings: { ...defaultSettings, organizationName: "ACME" },
+      status: "ready",
+      error: null,
+      refetch: mockRefetch,
+    });
+    mockSave.mockResolvedValueOnce({ ...defaultSettings, organizationName: null });
+
+    const user = userEvent.setup();
+    render(<AdminSettingsPanel />);
+    await openSection(user, "App móvil");
+    await user.clear(screen.getByLabelText("Nombre que se muestra al vincular la app"));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ organizationName: null }));
   });
 
   it("permite configurar y guardar opciones de migración progresiva a S3", async () => {

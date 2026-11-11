@@ -44,6 +44,8 @@ export function createMockPublicSettings(
     allowConversationDelete: true,
     allowGroupDelete: true,
     allowStickersAndGifs: true,
+    allowMobileApp: true,
+    organizationName: null,
     ...overrides,
   };
 }

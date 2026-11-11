@@ -37,6 +37,9 @@ export interface DraftState {
   allowMessageDeleteForEveryone: boolean;
   messageDeleteForEveryoneTimeLimitMinutes: string;
   allowStickersAndGifs: boolean;
+  allowMobileApp: boolean;
+  /** Vacío = sin nombre (`null`). */
+  organizationName: string;
   uploadCleanupEnabled: boolean;
   orphanFileRetentionHours: string;
   softDeletedFilePurgeDays: string;
@@ -138,6 +141,9 @@ export function toDraft(settings: AdminSettings): DraftState {
         ? ""
         : String(settings.messageDeleteForEveryoneTimeLimitMinutes),
     allowStickersAndGifs: settings.allowStickersAndGifs,
+    // Los `??` cubren un backend anterior a la app móvil.
+    allowMobileApp: settings.allowMobileApp ?? false,
+    organizationName: settings.organizationName ?? "",
     uploadCleanupEnabled: settings.uploadCleanupEnabled ?? false,
     orphanFileRetentionHours:
       settings.orphanFileRetentionHours == null ? "" : String(settings.orphanFileRetentionHours),
@@ -160,6 +166,14 @@ export function toDraft(settings: AdminSettings): DraftState {
     maxFailedLoginAttempts: settings.maxFailedLoginAttempts == null ? "" : String(settings.maxFailedLoginAttempts),
     lockoutDurationMinutes: String(settings.lockoutDurationMinutes ?? 15),
   };
+}
+
+/** Largo máximo del nombre de la organización (el mismo que valida el backend). */
+export const ORGANIZATION_NAME_MAX_LENGTH = 80;
+
+/** Sin espacios de sobra ni saltos de línea: igual que lo que guarda el backend. */
+export function normalizeOrganizationName(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 export type FieldErrors = Partial<Record<keyof DraftState, string>>;
@@ -208,6 +222,14 @@ export function validate(draft: DraftState, t?: Translate, passwordPolicy = fals
   if (t) {
     validateSession(draft, t, errors);
     if (passwordPolicy) validatePasswordPolicy(draft, t, errors);
+  }
+
+  const organizationName = normalizeOrganizationName(draft.organizationName);
+  if (organizationName.length > ORGANIZATION_NAME_MAX_LENGTH || /[\p{Cc}\p{Cf}]/u.test(organizationName)) {
+    errors.organizationName = tr(
+      "admin.settings.organizationNameError",
+      `Hasta ${ORGANIZATION_NAME_MAX_LENGTH} caracteres, sin caracteres de control.`,
+    );
   }
 
   const uploadSize = Number(draft.maxUploadSizeMb);
@@ -377,6 +399,8 @@ export function toPayload(draft: DraftState, passwordPolicy: boolean): UpdateAdm
         ? null
         : Number(draft.messageDeleteForEveryoneTimeLimitMinutes),
     allowStickersAndGifs: draft.allowStickersAndGifs,
+    allowMobileApp: draft.allowMobileApp,
+    organizationName: normalizeOrganizationName(draft.organizationName) || null,
     uploadCleanupEnabled: draft.uploadCleanupEnabled,
     orphanFileRetentionHours:
       draft.orphanFileRetentionHours.trim() === "" ? null : Number(draft.orphanFileRetentionHours),

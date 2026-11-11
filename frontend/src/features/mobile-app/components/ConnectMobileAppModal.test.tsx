@@ -5,11 +5,16 @@ import { ConnectMobileAppModal } from "./ConnectMobileAppModal";
 import { useAuth } from "@/providers/auth-provider";
 import { downloadBlob, renderConnectCardPng } from "@/features/mobile-app/utils/connect-card-image";
 import { copyTextToClipboard } from "@/utils/clipboard";
-import { createMockSession } from "@/test/test-utils";
+import { createMockPublicSettings, createMockSession } from "@/test/test-utils";
+import { usePublicSettings } from "@/providers/public-settings-provider";
 import type { ChatTarget } from "@/features/conversations/utils/chat-target";
 
 vi.mock("@/providers/auth-provider", () => ({
   useAuth: vi.fn(),
+}));
+
+vi.mock("@/providers/public-settings-provider", () => ({
+  usePublicSettings: vi.fn(),
 }));
 
 vi.mock("@/features/mobile-app/utils/connect-card-image", () => ({
@@ -70,6 +75,7 @@ describe("ConnectMobileAppModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth(createMockSession());
+    vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings());
     mockUseShareConnectCard.mockReturnValue({ share: mockShare, pending: false, error: null });
     vi.mocked(renderConnectCardPng).mockResolvedValue(png);
     vi.mocked(copyTextToClipboard).mockResolvedValue(true);
@@ -83,6 +89,23 @@ describe("ConnectMobileAppModal", () => {
     expect(screen.getByText(SITE)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Código QR para conectar la app móvil" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("muestra el nombre de la organización que escribió un admin, y lo usa como título de la imagen", async () => {
+    vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings({ organizationName: "Clínica del Sol" }));
+    const user = userEvent.setup();
+    render(<ConnectMobileAppModal onClose={vi.fn()} siteUrl={SITE} />);
+
+    expect(screen.getByText("Organización: Clínica del Sol")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Descargar imagen/i }));
+
+    expect(renderConnectCardPng).toHaveBeenCalledWith(expect.objectContaining({ title: "Clínica del Sol" }));
+  });
+
+  it("sin nombre no muestra la línea de organización", () => {
+    render(<ConnectMobileAppModal onClose={vi.fn()} siteUrl={SITE} />);
+
+    expect(screen.queryByText(/^Organización:/)).not.toBeInTheDocument();
   });
 
   it("usa la dirección desde la que se abrió la web si no se indica otra", () => {

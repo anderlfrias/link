@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { IconDeviceMobile, IconLogout, IconSettings, IconUserEdit } from "@tabler/icons-react";
 import { useAuth } from "@/providers/auth-provider";
+import { usePublicSettings } from "@/providers/public-settings-provider";
 import { useProfilePicture } from "@/features/auth/hooks/use-profile-picture";
 import { ADMIN_ROLE } from "@/features/admin/constants/admin-role.constant";
 import { ConnectMobileAppModal } from "@/features/mobile-app/components/ConnectMobileAppModal";
@@ -18,6 +19,8 @@ export function UserMenu({ onOpenProfileSettings }: UserMenuProps) {
   const { t } = useTranslation();
   const { session, logout } = useAuth();
   const { url: profilePictureUrl } = useProfilePicture();
+  // La opción solo existe si un admin habilitó la app móvil: apagada (o sin saber todavía), ni aparece.
+  const mobileAppAllowed = usePublicSettings()?.allowMobileApp === true;
   const [open, setOpen] = useState(false);
   const [connectAppOpen, setConnectAppOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,17 +69,19 @@ export function UserMenu({ onOpenProfileSettings }: UserMenuProps) {
             <IconUserEdit size={16} stroke={1.75} />
             {t("modals.editProfile")}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setConnectAppOpen(true);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-brand-ink hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
-          >
-            <IconDeviceMobile size={16} stroke={1.75} />
-            {t("mobileApp.menuItem")}
-          </button>
+          {mobileAppAllowed && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setConnectAppOpen(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-brand-ink hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
+            >
+              <IconDeviceMobile size={16} stroke={1.75} />
+              {t("mobileApp.menuItem")}
+            </button>
+          )}
           {session.user.roles.includes(ADMIN_ROLE) && (
             <Link
               href="/admin"
@@ -98,7 +103,7 @@ export function UserMenu({ onOpenProfileSettings }: UserMenuProps) {
         </div>
       )}
 
-      {connectAppOpen && <ConnectMobileAppModal onClose={() => setConnectAppOpen(false)} />}
+      {mobileAppAllowed && connectAppOpen && <ConnectMobileAppModal onClose={() => setConnectAppOpen(false)} />}
     </div>
   );
 }

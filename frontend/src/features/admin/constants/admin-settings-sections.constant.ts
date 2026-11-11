@@ -3,13 +3,21 @@ import {
   IconFiles,
   IconHistory,
   IconLock,
+  IconDeviceMobile,
   IconMessage,
   IconUsersGroup,
   type TablerIcon,
 } from "@tabler/icons-react";
 import type { DraftState } from "@/features/admin/utils/admin-settings-draft";
 
-export type SettingsSectionId = "messages" | "groups" | "attachments" | "retention" | "storage" | "security";
+export type SettingsSectionId =
+  | "messages"
+  | "groups"
+  | "attachments"
+  | "retention"
+  | "storage"
+  | "security"
+  | "mobileApp";
 export type SettingsSectionGroupId = "communication" | "data" | "access";
 
 export interface SettingsSection {
@@ -125,6 +133,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "maxFailedLoginAttempts",
       "lockoutDurationMinutes",
     ],
+  },
+  {
+    id: "mobileApp",
+    group: "access",
+    icon: IconDeviceMobile,
+    tint: "bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+    titleKey: "sectionMobileApp",
+    descriptionKey: "sectionMobileAppDesc",
+    fields: ["allowMobileApp", "organizationName"],
   },
 ];
 

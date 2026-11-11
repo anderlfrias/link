@@ -12,6 +12,7 @@ import { downloadBlob, renderConnectCardPng } from "@/features/mobile-app/utils/
 import { buildConnectLink, isSecureOrigin, normalizeSiteOrigin } from "@/features/mobile-app/utils/connect-link";
 import { buildQrMatrix } from "@/features/mobile-app/utils/qr-matrix";
 import { useAuth } from "@/providers/auth-provider";
+import { usePublicSettings } from "@/providers/public-settings-provider";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { useTranslation } from "@/i18n";
 
@@ -35,6 +36,7 @@ const COPIED_FEEDBACK_MS = 2000;
 export function ConnectMobileAppModal({ onClose, siteUrl }: ConnectMobileAppModalProps) {
   const { t } = useTranslation();
   const { session } = useAuth();
+  const organizationName = usePublicSettings()?.organizationName ?? null;
   const { share, pending, error: shareError } = useShareConnectCard();
   const [view, setView] = useState<"details" | "share">("details");
   const [copied, setCopied] = useState(false);
@@ -56,7 +58,8 @@ export function ConnectMobileAppModal({ onClose, siteUrl }: ConnectMobileAppModa
 
   if (!session || !origin || !matrix) return null;
 
-  const card = { matrix, url: origin, title: t("mobileApp.cardTitle"), hint: t("mobileApp.cardHint") };
+  // El nombre que un admin eligió, si lo hay: es lo que la app muestra al vincularse.
+  const card = { matrix, url: origin, title: organizationName ?? t("mobileApp.cardTitle"), hint: t("mobileApp.cardHint") };
 
   async function handleCopy() {
     if (!origin || !(await copyTextToClipboard(origin))) return;
@@ -126,6 +129,11 @@ export function ConnectMobileAppModal({ onClose, siteUrl }: ConnectMobileAppModa
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        {organizationName && (
+          <p className="text-sm font-semibold text-brand-ink dark:text-white">
+            {t("mobileApp.organization", { name: organizationName })}
+          </p>
+        )}
         <p className="text-sm text-neutral-600 dark:text-neutral-300">{t("mobileApp.intro")}</p>
 
         {!isSecureOrigin(origin) && (

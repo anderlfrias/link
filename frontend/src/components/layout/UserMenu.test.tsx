@@ -5,7 +5,8 @@ import { UserMenu } from "./UserMenu";
 import { useAuth } from "@/providers/auth-provider";
 import { useProfilePicture } from "@/features/auth/hooks/use-profile-picture";
 import { ADMIN_ROLE } from "@/features/admin/constants/admin-role.constant";
-import { createMockSession } from "@/test/test-utils";
+import { createMockSession, createMockPublicSettings } from "@/test/test-utils";
+import { usePublicSettings } from "@/providers/public-settings-provider";
 
 vi.mock("@/providers/auth-provider", () => ({
   useAuth: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock("@/providers/auth-provider", () => ({
 
 vi.mock("@/features/auth/hooks/use-profile-picture", () => ({
   useProfilePicture: vi.fn(),
+}));
+
+vi.mock("@/providers/public-settings-provider", () => ({
+  usePublicSettings: vi.fn(),
 }));
 
 // El diálogo tiene sus propios tests (ConnectMobileAppModal.test.tsx).
@@ -29,6 +34,7 @@ vi.mock("@/features/mobile-app/components/ConnectMobileAppModal", () => ({
 describe("UserMenu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings({ allowMobileApp: true }));
     vi.mocked(useProfilePicture).mockReturnValue({
       url: null,
       refresh: vi.fn(),
@@ -198,5 +204,50 @@ describe("UserMenu", () => {
     await user.click(screen.getByRole("button", { name: "cerrar diálogo" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-});
 
+  describe("opción Conectar app móvil según lo que habilitó un admin", () => {
+    const authenticate = () =>
+      vi.mocked(useAuth).mockReturnValue({
+        session: createMockSession(),
+        status: "authenticated",
+        login: vi.fn(),
+        logout: vi.fn(),
+        updateSessionUser: vi.fn(),
+        expireSession: vi.fn(),
+        completePasswordChange: vi.fn(),
+      });
+
+    async function openMenu() {
+      const user = userEvent.setup();
+      render(<UserMenu onOpenProfileSettings={vi.fn()} />);
+      await user.click(screen.getByRole("button", { name: "Menú de usuario" }));
+    }
+
+    it("con el uso de la app apagado, la opción ni aparece", async () => {
+      authenticate();
+      vi.mocked(usePublicSettings).mockReturnValue(createMockPublicSettings({ allowMobileApp: false }));
+
+      await openMenu();
+
+      expect(screen.queryByRole("button", { name: /Conectar app móvil/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Editar perfil/i })).toBeInTheDocument();
+    });
+
+    it("mientras no se conoce la configuración (cargando o con error), tampoco aparece", async () => {
+      authenticate();
+      vi.mocked(usePublicSettings).mockReturnValue(null);
+
+      await openMenu();
+
+      expect(screen.queryByRole("button", { name: /Conectar app móvil/i })).not.toBeInTheDocument();
+    });
+
+    it("con el uso de la app habilitado, aparece", async () => {
+      authenticate();
+
+      await openMenu();
+
+      expect(screen.getByRole("button", { name: /Conectar app móvil/i })).toBeInTheDocument();
+    });
+  });
+});
