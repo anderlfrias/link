@@ -180,6 +180,8 @@ describe("settings.controller", () => {
         allowConversationDelete: true,
         allowGroupDelete: true,
         allowStickersAndGifs: true,
+        allowMobileApp: false,
+        organizationName: null,
       });
 
       const res = await request(app)

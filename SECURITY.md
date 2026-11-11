@@ -43,8 +43,11 @@ Solo se corrigen vulnerabilidades sobre la última versión publicada (rama `mai
 - **`GET /api/v1/instance` y `/.well-known/link-app.json` son públicos.** Los consulta una app
   móvil antes de iniciar sesión, para saber dónde está el API y confirmar que es un LINK. Solo
   devuelven las URL del API y del socket (que ya viajan en el JavaScript de la web) y un nivel de
-  compatibilidad; nunca la versión del backend ni datos de cuentas. `/api/v1/instance` tiene rate
-  limit por IP y no consulta la base.
+  compatibilidad y, si un admin lo escribió, **el nombre de la organización** (es público a propósito:
+  se muestra al vincular la app); nunca la versión del backend ni datos de cuentas.
+  `/api/v1/instance` tiene rate limit por IP y lee los ajustes de la caché, no de la base por
+  pedido. El uso de la app lo habilita un admin (apagado por defecto): sin eso la web no ofrece
+  "Conectar app móvil" y la app se niega a vincularse.
 - **Una sola instancia del backend.** Varias instancias, además de romper los eventos en tiempo
   real, multiplican los límites de rate limiting, que viven en memoria.
 - **Almacenamiento S3.** Restringir el CORS del bucket al origen del frontend y no dar acceso
