@@ -99,6 +99,8 @@ const mockSettings: AdminSettings = {
   allowMessageDeleteForEveryone: true,
   messageDeleteForEveryoneTimeLimitMinutes: 60,
   allowStickersAndGifs: true,
+  allowMobileApp: false,
+  organizationName: null,
   uploadCleanupEnabled: false,
   orphanFileRetentionHours: null,
   softDeletedFilePurgeDays: null,
