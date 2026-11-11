@@ -49,6 +49,9 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?Falta VAPID_PRIVATE_KEY en .env. Correr npm run setup (ver README.md)}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       MOBILE_PUSH_ENABLED: ${MOBILE_PUSH_ENABLED:-true}
+      STUN_URLS: ${STUN_URLS:-}
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-}
       GIPHY_API_KEY: ${GIPHY_API_KEY:-}
       # Almacenamiento: LOCAL (volumen `uploads`) por defecto. S3 es opcional,
       # ver README.md, sección "Almacenamiento S3".

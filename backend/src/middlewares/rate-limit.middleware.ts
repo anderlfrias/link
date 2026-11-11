@@ -116,6 +116,17 @@ export const instanceInfoRateLimiter = rateLimit({
   message: { error: "Demasiadas solicitudes. Esperá unos minutos y volvé a intentar." },
 });
 
+// `GET /v1/calls/ice-servers`: el cliente lo pide al iniciar o contestar una llamada. Reparte
+// credenciales TURN, así que se acota por cuenta; 60 cada 15 minutos cubre muchas llamadas seguidas.
+export const iceServersRateLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.internalUserId ?? getClientIp(req) ?? "unknown",
+  message: { error: "Demasiadas solicitudes. Esperá unos minutos y volvé a intentar." },
+});
+
 // Alta y baja de dispositivos móviles para push (`/v1/push/devices`). Cada inicio de
 // sesión en la app registra uno y cada cierre lo da de baja; 30 cada 15 minutos por
 // cuenta cubre cambiar de cuenta muchas veces en un mismo teléfono y acota el abuso.

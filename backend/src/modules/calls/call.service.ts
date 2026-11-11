@@ -2,6 +2,7 @@ import { AuditAction, CallStatus, CallType } from "@prisma/client";
 import { assertMembership } from "../conversations/conversation.service";
 import * as ConversationRepository from "../conversations/conversation.repository";
 import * as AuditService from "../audit/audit.service";
+import * as MobilePushService from "../push/mobile-push.service";
 import * as PushService from "../push/push.service";
 import { getLogger } from "../../config/request-context";
 import { AppError, BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors";
@@ -63,6 +64,8 @@ export function toCallResponse(call: any): CallResponse {
 /// Nunca lanza ni se espera: un push caído no debe impedir que la llamada se inicie.
 async function pushIncomingCall(call: any, type: CallType): Promise<void> {
   try {
+    // App móvil: aviso genérico (ver push/mobile-push.service.ts).
+    void MobilePushService.notifyIncomingCall(call.receiverId, call.conversationId, CALL_RING_TIMEOUT_MS / 1000);
     await PushService.notifyUsers(
       [call.receiverId],
       {

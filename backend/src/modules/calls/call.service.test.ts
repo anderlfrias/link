@@ -5,6 +5,7 @@ import { CALL_RING_TIMEOUT_MS } from "./call.constants";
 import * as AuditService from "../audit/audit.service";
 import * as ConversationService from "../conversations/conversation.service";
 import * as MessageService from "../messages/message.service";
+import * as MobilePushService from "../push/mobile-push.service";
 import * as PushService from "../push/push.service";
 import * as CallRepository from "./call.repository";
 import {
@@ -34,6 +35,7 @@ vi.mock("../conversations/conversation.service");
 vi.mock("../audit/audit.service");
 vi.mock("../messages/message.service");
 vi.mock("../push/push.service");
+vi.mock("../push/mobile-push.service");
 
 describe("call.service", () => {
   const callerId = "user-caller-1";
@@ -159,6 +161,9 @@ describe("call.service", () => {
         expect.objectContaining({ body: "Videollamada entrante" }),
         expect.any(Object),
       );
+      // App móvil: aviso genérico, durante lo que suena la llamada, y sin quién llama ni el tipo.
+      expect(MobilePushService.notifyIncomingCall).toHaveBeenCalledWith(receiverId, conversationId, 45);
+      expect(JSON.stringify(vi.mocked(MobilePushService.notifyIncomingCall).mock.calls)).not.toContain("Llamante");
     });
 
     it("lanza BadRequestError si el receptor no es miembro de la conversación", async () => {

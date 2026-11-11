@@ -41,6 +41,18 @@ const schema = yup.object({
   VAPID_PUBLIC_KEY: yup.string().required(),
   VAPID_PRIVATE_KEY: yup.string().required(),
   VAPID_SUBJECT: yup.string().required(),
+  // Servidores ICE de las llamadas (ver modules/calls/ice.service.ts). Todo opcional: sin
+  // configurar, STUN públicos de Google y sin TURN, como siempre. Listas separadas por coma.
+  STUN_URLS: optionalString(),
+  // Servidor(es) TURN (`turn:host:3478?transport=udp`, `turns:host:5349?transport=tcp`). Sin TURN,
+  // muchas llamadas no conectan en datos móviles ni detrás de NAT simétrico.
+  TURN_URLS: optionalString(),
+  // Secreto compartido con coturn (`use-auth-secret`): credenciales temporales por usuario.
+  TURN_SHARED_SECRET: optionalString(),
+  TURN_CREDENTIAL_TTL_SECONDS: yup.number().integer().min(60).max(86_400).default(3600),
+  // Alternativa más simple: una credencial fija (coturn `lt-cred-mech`).
+  TURN_USERNAME: optionalString(),
+  TURN_PASSWORD: optionalString(),
   // Notificaciones push para la app móvil (servicio de Expo, ver modules/push/README.md).
   // Activas por defecto; "false" las apaga (por ejemplo, si la organización no quiere que
   // avisos genéricos pasen por Expo, Google y Apple). No afecta a Web Push. Mismo patrón de

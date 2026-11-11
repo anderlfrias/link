@@ -74,6 +74,40 @@ Al tocarla, el service worker trae al frente una ventana de la app (sin recargar
 
 Una llamada **perdida** deja además un mensaje en la conversación, que genera su propio push como cualquier mensaje para quien no está conectado: no hace falta un push aparte de "llamada perdida".
 
+## Servidores ICE (STUN y TURN)
+
+Antes eran fijos en el código del frontend (STUN públicos de Google, sin TURN): en datos móviles y detrás de NAT simétrico muchas llamadas no conectaban. Ahora los entrega `GET /api/v1/calls/ice-servers` (`ice.service.ts`) a cada cliente con sesión, web y app móvil por igual.
+
+Se configuran por variables de entorno, todas opcionales (sin ellas, el comportamiento de siempre):
+
+| Variable | Qué hace |
+|---|---|
+| `STUN_URLS` | STUN propios, separados por coma. Reemplazan a los de Google. |
+| `TURN_URLS` | Servidores TURN: `turn:host:3478?transport=udp,turns:host:5349?transport=tcp`. |
+| `TURN_SHARED_SECRET` | El mismo secreto que `static-auth-secret` de coturn (`use-auth-secret`). Credenciales **temporales por usuario**: usuario `<vencimiento>:<id>` y credencial HMAC-SHA1 en base64. |
+| `TURN_CREDENTIAL_TTL_SECONDS` | Cuánto valen (60 a 86400, default 3600). |
+| `TURN_USERNAME`, `TURN_PASSWORD` | Alternativa con una credencial fija (`lt-cred-mech`). El secreto compartido tiene prioridad. |
+
+Ejemplo mínimo de `turnserver.conf` de coturn para el modo recomendado:
+
+```text
+use-auth-secret
+static-auth-secret=<el mismo valor que TURN_SHARED_SECRET>
+realm=turn.empresa.com
+fingerprint
+no-multicast-peers
+# Nada hacia redes internas: un TURN abierto es un puente hacia ellas.
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+```
+
+El TURN lo pone quien hospeda LINK (necesita su propio servidor con IP pública y puertos abiertos); LINK solo reparte las credenciales. El valor de `TURN_URLS` sin credenciales no se entrega, y una URL que no sea `stun`, `stuns`, `turn` o `turns` se descarta.
+
+## Push de llamada para la app móvil
+
+Además de Web Push, `initiateCall` avisa a la app móvil por el servicio push de Expo (`notifyIncomingCall` en `push/mobile-push.service.ts`). Es **genérico** (no dice quién llama ni si es de voz o video), vive lo que suena la llamada (`CALL_RING_TIMEOUT_MS`) y usa el canal `calls`. Al tocarlo, la app se abre y pregunta con `call:sync` cuál es la llamada que suena, igual que la web.
+
 ## Privacidad
 
 El texto de una respuesta rápida es contenido de un mensaje: nunca se loguea (`LOGGING_PLAN.md` §4.1). Por eso `call:reject` loguea de un error de validación solo su mensaje, y `sendDeclineReply` solo un motivo genérico.
