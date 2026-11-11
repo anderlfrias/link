@@ -45,11 +45,15 @@ vi.mock("../auth/auth.repository", () => ({
 vi.mock("../push/push.service", () => ({
   notifyUsers: vi.fn(),
 }));
+vi.mock("../push/mobile-push.service", () => ({
+  notifyNewMessage: vi.fn(),
+}));
 vi.mock("../settings/settings.service");
 vi.mock("../audit/audit.service");
 
 import { getConnectedUserIds } from "../../socket/rooms";
 import * as ConversationService from "../conversations/conversation.service";
+import * as MobilePushService from "../push/mobile-push.service";
 import * as PushService from "../push/push.service";
 import * as SettingsService from "../settings/settings.service";
 import * as AuditService from "../audit/audit.service";
@@ -150,6 +154,9 @@ describe("message.service", () => {
       );
       expect(mockEmit).toHaveBeenCalledWith(MESSAGE_EVENTS.CREATED, expect.objectContaining({ id: "msg-1" }));
       expect(PushService.notifyUsers).toHaveBeenCalledWith(["u-2"], expect.any(Object));
+      // App móvil: solo el id de la conversación; nunca el texto del mensaje.
+      expect(MobilePushService.notifyNewMessage).toHaveBeenCalledWith(["u-2"], "conv-1");
+      expect(JSON.stringify(vi.mocked(MobilePushService.notifyNewMessage).mock.calls)).not.toContain("Hola a todos");
       expect(result.id).toBe("msg-1");
     });
 

@@ -246,6 +246,7 @@ model User {
   uploadedFiles           StoredFile[]         @relation("StoredFileCreatedBy")
   fileUploads             FileUpload[]         @relation("FileUploadCreatedBy")
   pushSubscriptions       PushSubscription[]
+  mobilePushDevices       MobilePushDevice[]
   reactions               MessageReaction[]
   pollVotes               PollVote[]
   callsInitiated          Call[]               @relation("CallCaller")
@@ -813,6 +814,30 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+/// Dispositivo móvil registrado para recibir notificaciones push de la app de
+/// LINK, a través del servicio push de Expo (ver modules/push/README.md). A
+/// diferencia de `PushSubscription` (Web Push, cifrado de punta a punta), este
+/// canal pasa en claro por Expo/Google/Apple: la notificación que se manda es
+/// genérica, sin texto ni nombres.
+model MobilePushDevice {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Token de Expo (`ExponentPushToken[...]`). Identifica la instalación de la
+  /// app, no a la persona: si otra cuenta inicia sesión en ese teléfono, la
+  /// fila pasa a ella (ver `registerDevice`).
+  token    String @unique
+  /// "ios" | "android". Solo informativo.
+  platform String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("mobile_push_devices")
 }
 
 /// Estado de una sesión de subida chunked. Efímera: se crea al iniciar, muere

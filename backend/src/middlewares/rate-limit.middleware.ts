@@ -102,6 +102,18 @@ export const loginUserRateLimiter = rateLimit({
   message: TOO_MANY_ATTEMPTS_MESSAGE,
 });
 
+// Alta y baja de dispositivos móviles para push (`/v1/push/devices`). Cada inicio de
+// sesión en la app registra uno y cada cierre lo da de baja; 30 cada 15 minutos por
+// cuenta cubre cambiar de cuenta muchas veces en un mismo teléfono y acota el abuso.
+export const pushDeviceRateLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.internalUserId ?? getClientIp(req) ?? "unknown",
+  message: { error: "Demasiadas solicitudes. Esperá unos minutos y volvé a intentar." },
+});
+
 // Envío de mensajes (`POST /` y `POST /forward` de messages): sin esto, un usuario
 // autenticado podía saturar la base, los recibos y los push de los demás. Por
 // usuario (`internalUserId`), no por IP, por la misma razón que los limiters de
