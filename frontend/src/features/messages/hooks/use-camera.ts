@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type CameraStatus = "idle" | "requesting" | "ready" | "captured" | "error";
+export type CameraStatus = "idle" | "requesting" | "ready" | "error";
 export type CameraFacingMode = "user" | "environment";
 
 export interface UseCameraReturn {
@@ -13,14 +13,15 @@ export interface UseCameraReturn {
   availableCameras: MediaDeviceInfo[];
   hasMultipleCameras: boolean;
   currentDeviceId: string | null;
-  capturedBlob: Blob | null;
-  capturedUrl: string | null;
-  startCamera: (facing?: CameraFacingMode, deviceId?: string) => Promise<void>;
+  /** `true` si el stream actual trae micrófono (hace falta para grabar video con sonido). */
+  hasAudio: boolean;
+  /** `withAudio` pide además el micrófono (modo video); sin indicarlo se conserva lo último pedido. */
+  startCamera: (facing?: CameraFacingMode, deviceId?: string, withAudio?: boolean) => Promise<void>;
   stopCamera: () => void;
   switchCamera: () => Promise<void>;
-  capture: (videoElement: HTMLVideoElement | null) => Promise<Blob | null>;
-  retake: () => Promise<void>;
-  confirmPhoto: (fileName?: string) => File | null;
+  /** Saca una foto del visor y la devuelve como `File`. La cámara sigue encendida para poder
+   * sacar otra (no hay paso de revisión: quien llama decide qué hacer con cada foto). */
+  capture: (videoElement: HTMLVideoElement | null) => Promise<File | null>;
 }
 
 export function useCamera(): UseCameraReturn {
@@ -30,11 +31,10 @@ export function useCamera(): UseCameraReturn {
   const [facingMode, setFacingMode] = useState<CameraFacingMode>("environment");
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
-  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
-  const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+  const [hasAudio, setHasAudio] = useState(false);
 
   const streamRef = useRef<MediaStream | null>(null);
-  const capturedUrlRef = useRef<string | null>(null);
+  const withAudioRef = useRef(false);
   const availableCamerasRef = useRef<MediaDeviceInfo[]>([]);
   const currentDeviceIdRef = useRef<string | null>(null);
 
@@ -42,10 +42,6 @@ export function useCamera(): UseCameraReturn {
   useEffect(() => {
     streamRef.current = stream;
   }, [stream]);
-
-  useEffect(() => {
-    capturedUrlRef.current = capturedUrl;
-  }, [capturedUrl]);
 
   useEffect(() => {
     availableCamerasRef.current = availableCameras;
@@ -83,7 +79,9 @@ export function useCamera(): UseCameraReturn {
   }, []);
 
   const startCamera = useCallback(
-    async (facing: CameraFacingMode = facingMode, deviceId?: string) => {
+    async (facing: CameraFacingMode = facingMode, deviceId?: string, withAudio?: boolean) => {
+      if (withAudio !== undefined) withAudioRef.current = withAudio;
+      const wantAudio = withAudioRef.current;
       stopCamera();
       setError(null);
       setStatus("requesting");
@@ -119,7 +117,7 @@ export function useCamera(): UseCameraReturn {
 
           mediaStream = await navigator.mediaDevices.getUserMedia({
             video: videoConstraints,
-            audio: false,
+            audio: wantAudio,
           });
         } catch {
           // Intento 2: Fallback relajando resolución pero respetando deviceId o facingMode
@@ -128,13 +126,13 @@ export function useCamera(): UseCameraReturn {
               video: deviceId
                 ? { deviceId: { exact: deviceId } }
                 : { facingMode: { ideal: facing } },
-              audio: false,
+              audio: wantAudio,
             });
           } catch {
             // Intento 3: Fallback a video básico si las restricciones específicas del dispositivo fallan
             mediaStream = await navigator.mediaDevices.getUserMedia({
               video: true,
-              audio: false,
+              audio: wantAudio,
             });
           }
         }
@@ -160,6 +158,7 @@ export function useCamera(): UseCameraReturn {
         }
 
         streamRef.current = mediaStream;
+        setHasAudio(typeof mediaStream.getAudioTracks === "function" && mediaStream.getAudioTracks().length > 0);
         setStream(mediaStream);
         setFacingMode(actualFacing);
         currentDeviceIdRef.current = actualDeviceId;
@@ -219,7 +218,7 @@ export function useCamera(): UseCameraReturn {
   }, [availableCameras, currentDeviceId, facingMode, startCamera]);
 
   const capture = useCallback(
-    async (videoElement: HTMLVideoElement | null): Promise<Blob | null> => {
+    async (videoElement: HTMLVideoElement | null): Promise<File | null> => {
       if (!videoElement || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
         return null;
       }
@@ -285,41 +284,10 @@ export function useCamera(): UseCameraReturn {
         }
       });
 
-      if (blob) {
-        // Limpiar URL previa si existía
-        if (capturedUrlRef.current) {
-          URL.revokeObjectURL(capturedUrlRef.current);
-        }
-        const url = URL.createObjectURL(blob);
-        setCapturedBlob(blob);
-        setCapturedUrl(url);
-        setStatus("captured");
-        // Apagar cámara en vivo para ahorrar batería y apagar el sensor
-        stopCamera();
-        return blob;
-      }
-
-      return null;
+      if (!blob) return null;
+      return new File([blob], `foto_camara_${Date.now()}.jpg`, { type: "image/jpeg" });
     },
-    [facingMode, stopCamera],
-  );
-
-  const retake = useCallback(async () => {
-    if (capturedUrlRef.current) {
-      URL.revokeObjectURL(capturedUrlRef.current);
-    }
-    setCapturedBlob(null);
-    setCapturedUrl(null);
-    await startCamera(facingMode, currentDeviceId ?? undefined);
-  }, [currentDeviceId, facingMode, startCamera]);
-
-  const confirmPhoto = useCallback(
-    (fileName?: string): File | null => {
-      if (!capturedBlob) return null;
-      const name = fileName || `foto_camara_${Date.now()}.jpg`;
-      return new File([capturedBlob], name, { type: "image/jpeg" });
-    },
-    [capturedBlob],
+    [facingMode],
   );
 
   // Limpieza al desmontar
@@ -327,9 +295,6 @@ export function useCamera(): UseCameraReturn {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-      if (capturedUrlRef.current) {
-        URL.revokeObjectURL(capturedUrlRef.current);
       }
     };
   }, []);
@@ -342,13 +307,10 @@ export function useCamera(): UseCameraReturn {
     availableCameras,
     hasMultipleCameras: availableCameras.length > 1,
     currentDeviceId,
-    capturedBlob,
-    capturedUrl,
+    hasAudio,
     startCamera,
     stopCamera,
     switchCamera,
     capture,
-    retake,
-    confirmPhoto,
   };
 }

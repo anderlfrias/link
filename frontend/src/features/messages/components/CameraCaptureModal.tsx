@@ -1,53 +1,87 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconCamera,
   IconCheck,
   IconLoader2,
   IconRefresh,
+  IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { useCamera } from "@/features/messages/hooks/use-camera";
+import { useStreamRecorder } from "@/features/messages/hooks/use-stream-recorder";
+import { formatDuration } from "@/utils/format-duration";
 import { cn } from "@/utils/cn";
 
 interface CameraCaptureModalProps {
   open: boolean;
   onClose: () => void;
-  onCapture: (file: File) => void;
+  /** Todo lo capturado en la sesión (fotos y videos), de una sola vez al tocar "Listo". */
+  onCapture: (files: File[]) => void;
 }
 
-export function CameraCaptureModal({
-  open,
-  onClose,
-  onCapture,
-}: CameraCaptureModalProps) {
+type CaptureMode = "photo" | "video";
+
+interface CapturedItem {
+  id: number;
+  file: File;
+  /** URL de objeto para la miniatura (solo fotos). */
+  url: string | null;
+}
+
+/**
+ * Cámara dentro de la app: se pueden sacar varias fotos y grabar varios videos sin salir del visor
+ * (cada captura queda en la tira de abajo), y recién al tocar "Listo" se agregan todos al mensaje.
+ */
+export function CameraCaptureModal({ open, onClose, onCapture }: CameraCaptureModalProps) {
   const {
     status,
     error,
     stream,
     facingMode,
-    capturedUrl,
-    hasMultipleCameras,
+    currentDeviceId,
+    hasAudio,
     startCamera,
     stopCamera,
     switchCamera,
     capture,
-    retake,
-    confirmPhoto,
   } = useCamera();
+  const recorder = useStreamRecorder(stream);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const nextIdRef = useRef(1);
+  const [mode, setMode] = useState<CaptureMode>("photo");
+  const [items, setItems] = useState<CapturedItem[]>([]);
+  const [recordError, setRecordError] = useState<string | null>(null);
 
-  // Iniciar cámara cuando el modal se abre, y apagarla al cerrarse
+  // Las funciones del hook cambian de identidad cuando cambia la cámara activa: se leen por ref
+  // para que abrir/cerrar el modal sea lo único que enciende o apaga la cámara.
+  const startRef = useRef(startCamera);
+  const stopRef = useRef(stopCamera);
+  const cancelRecordingRef = useRef(recorder.cancel);
+  useEffect(() => {
+    startRef.current = startCamera;
+    stopRef.current = stopCamera;
+    cancelRecordingRef.current = recorder.cancel;
+  });
+
+  // Al abrir: cámara en modo foto. Al cerrar: se apaga todo y se descarta lo que no se agregó.
   useEffect(() => {
     if (open) {
-      void startCamera();
-    } else {
-      stopCamera();
+      setMode("photo");
+      void startRef.current(undefined, undefined, false);
+      return;
     }
-  }, [open, startCamera, stopCamera]);
+    cancelRecordingRef.current();
+    stopRef.current();
+    setItems((prev) => {
+      prev.forEach((item) => item.url && URL.revokeObjectURL(item.url));
+      return [];
+    });
+    setRecordError(null);
+  }, [open]);
 
   // Conectar el stream al elemento de video
   useEffect(() => {
@@ -74,17 +108,58 @@ export function CameraCaptureModal({
 
   if (!open) return null;
 
-  async function handleTakePicture() {
-    await capture(videoRef.current);
+  function addItem(file: File) {
+    const url = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    setItems((prev) => [...prev, { id: nextIdRef.current++, file, url }]);
   }
 
-  function handleConfirm() {
-    const file = confirmPhoto();
-    if (file) {
-      onCapture(file);
-      onClose();
-    }
+  function removeItem(id: number) {
+    setItems((prev) => {
+      const removed = prev.find((item) => item.id === id);
+      if (removed?.url) URL.revokeObjectURL(removed.url);
+      return prev.filter((item) => item.id !== id);
+    });
   }
+
+  async function handleChangeMode(next: CaptureMode) {
+    if (next === mode || recorder.recording) return;
+    setMode(next);
+    setRecordError(null);
+    // El micrófono solo se pide en modo video: en modo foto no hace falta.
+    await startCamera(facingMode, currentDeviceId ?? undefined, next === "video");
+  }
+
+  async function handleShutter() {
+    if (mode === "photo") {
+      const file = await capture(videoRef.current);
+      if (file) addItem(file);
+      return;
+    }
+    if (recorder.recording) {
+      const file = await recorder.stop();
+      if (file) addItem(file);
+      else setRecordError("No se grabó nada. Probá de nuevo.");
+      return;
+    }
+    setRecordError(null);
+    if (!recorder.start()) setRecordError("No se pudo iniciar la grabación en este dispositivo.");
+  }
+
+  function handleDone() {
+    if (items.length === 0) return;
+    onCapture(items.map((item) => item.file));
+    onClose();
+  }
+
+  const isReady = status === "ready";
+  const photoCount = items.filter((item) => item.file.type.startsWith("image/")).length;
+  const videoCount = items.length - photoCount;
+  const summary = [
+    photoCount > 0 ? `${photoCount} ${photoCount === 1 ? "foto" : "fotos"}` : null,
+    videoCount > 0 ? `${videoCount} ${videoCount === 1 ? "video" : "videos"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" y ");
 
   return (
     <div
@@ -98,16 +173,17 @@ export function CameraCaptureModal({
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-neutral-950/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-2 font-medium text-sm">
             <IconCamera size={18} className="text-brand-blue" />
-            <span>Tomar fotografía</span>
+            <span>{mode === "video" ? "Grabar video" : "Tomar fotografía"}</span>
           </div>
           <div className="flex items-center gap-1">
-            {(status === "ready" || status === "requesting") && (
+            {(isReady || status === "requesting") && (
               <button
                 type="button"
                 onClick={() => void switchCamera()}
+                disabled={recorder.recording}
                 title="Cambiar cámara (frontal / trasera)"
                 aria-label="Cambiar cámara"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40"
               >
                 <IconRefresh size={18} />
               </button>
@@ -123,7 +199,7 @@ export function CameraCaptureModal({
           </div>
         </div>
 
-        {/* Visor de cámara / Foto congelada */}
+        {/* Visor de cámara */}
         <div className="relative flex-1 w-full min-h-0 sm:flex-none sm:aspect-[4/3] overflow-hidden bg-black flex items-center justify-center">
           {status === "requesting" && (
             <div className="flex flex-col items-center gap-2 text-neutral-400">
@@ -138,7 +214,7 @@ export function CameraCaptureModal({
               <p className="text-xs">{error ?? "Ocurrió un error al acceder a la cámara."}</p>
               <button
                 type="button"
-                onClick={() => void startCamera(facingMode)}
+                onClick={() => void startCamera(facingMode, undefined, mode === "video")}
                 className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
               >
                 Reintentar
@@ -146,7 +222,7 @@ export function CameraCaptureModal({
             </div>
           )}
 
-          {status === "ready" && (
+          {isReady && (
             <video
               ref={videoRef}
               autoPlay
@@ -160,61 +236,123 @@ export function CameraCaptureModal({
             />
           )}
 
-          {status === "captured" && capturedUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={capturedUrl}
-              alt="Foto capturada"
-              className="h-full w-full object-cover animate-in fade-in duration-150"
-            />
-          )}
-        </div>
-
-        {/* Barra de acciones inferior */}
-        <div className="flex items-center justify-center border-t border-white/10 bg-neutral-950/80 backdrop-blur-md px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0 z-10">
-          {status === "ready" && (
-            <div className="relative flex w-full items-center justify-center">
-              <button
-                type="button"
-                onClick={() => void handleTakePicture()}
-                aria-label="Tomar foto"
-                className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20 p-1 shadow-lg transition-transform hover:scale-105 active:scale-95"
-              >
-                <div className="h-full w-full rounded-full bg-white shadow" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void switchCamera()}
-                title="Cambiar cámara"
-                aria-label="Cambiar cámara inferior"
-                className="absolute right-2 sm:right-6 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white shadow backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95"
-              >
-                <IconRefresh size={20} />
-              </button>
+          {isReady && recorder.recording && (
+            <div
+              role="timer"
+              aria-label="Tiempo de grabación"
+              className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium"
+            >
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+              <span className="tabular-nums">{formatDuration(recorder.elapsedMs)}</span>
             </div>
           )}
 
-          {status === "captured" && (
-            <div className="flex w-full items-center justify-between gap-4">
+          {isReady && mode === "video" && !hasAudio && !recorder.recording && (
+            <p className="absolute inset-x-3 top-3 rounded-lg bg-black/60 px-3 py-1.5 text-center text-xs text-amber-300">
+              Sin micrófono: el video se grabará sin sonido.
+            </p>
+          )}
+        </div>
+
+        {/* Lo capturado hasta ahora */}
+        {items.length > 0 && (
+          <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-t border-white/10 bg-neutral-950/90 px-3 py-2">
+            {items.map((item, index) => (
+              <div key={item.id} className="relative h-14 w-14 shrink-0">
+                {item.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.url}
+                    alt={`Foto ${index + 1}`}
+                    className="h-full w-full rounded-lg object-cover"
+                  />
+                ) : (
+                  <div
+                    role="img"
+                    aria-label={`Video ${index + 1}`}
+                    className="flex h-full w-full items-center justify-center rounded-lg bg-white/10 text-white/80"
+                  >
+                    <IconVideo size={22} />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeItem(item.id)}
+                  aria-label={`Quitar ${item.url ? "foto" : "video"} ${index + 1}`}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-700 text-white shadow transition-colors hover:bg-red-500"
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p role="status" className="sr-only">
+          {summary ? `${summary} listos para agregar` : ""}
+        </p>
+        {recordError && (
+          <p role="alert" className="shrink-0 bg-red-500/15 px-4 py-1.5 text-center text-xs text-red-300">
+            {recordError}
+          </p>
+        )}
+
+        {/* Barra de acciones inferior */}
+        <div className="flex items-center justify-center border-t border-white/10 bg-neutral-950/80 backdrop-blur-md px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0 z-10">
+          {isReady && (
+            <div className="relative flex w-full items-center justify-center">
+              {recorder.supported && !recorder.recording && (
+                <div
+                  role="group"
+                  aria-label="Modo de captura"
+                  className="absolute left-0 flex rounded-full bg-white/10 p-0.5 text-xs font-medium"
+                >
+                  {(["photo", "video"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={mode === option}
+                      onClick={() => void handleChangeMode(option)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 transition-colors",
+                        mode === option ? "bg-white text-neutral-900" : "text-neutral-300 hover:text-white",
+                      )}
+                    >
+                      {option === "photo" ? "Foto" : "Video"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <button
                 type="button"
-                onClick={() => void retake()}
-                aria-label="Repetir foto"
-                className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/20 hover:text-white"
+                onClick={() => void handleShutter()}
+                aria-label={mode === "photo" ? "Tomar foto" : recorder.recording ? "Detener grabación" : "Grabar video"}
+                className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20 p-1 shadow-lg transition-transform hover:scale-105 active:scale-95"
               >
-                <IconRefresh size={16} />
-                <span>Repetir</span>
+                <div
+                  className={cn(
+                    "shadow transition-all",
+                    mode === "video"
+                      ? recorder.recording
+                        ? "h-6 w-6 rounded-md bg-red-500"
+                        : "h-full w-full rounded-full bg-red-500"
+                      : "h-full w-full rounded-full bg-white",
+                  )}
+                />
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                aria-label="Usar foto"
-                className="flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-medium text-white shadow transition-all hover:bg-brand-blue/90"
-              >
-                <IconCheck size={16} />
-                <span>Usar foto</span>
-              </button>
+
+              {items.length > 0 && !recorder.recording && (
+                <button
+                  type="button"
+                  onClick={handleDone}
+                  aria-label={`Agregar ${summary}`}
+                  className="absolute right-0 flex items-center gap-1.5 rounded-xl bg-brand-blue px-4 py-2.5 text-sm font-medium text-white shadow transition-all hover:bg-brand-blue/90"
+                >
+                  <IconCheck size={16} />
+                  <span>Listo ({items.length})</span>
+                </button>
+              )}
             </div>
           )}
 

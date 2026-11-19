@@ -8,6 +8,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Añadido
+- **Cámara de la app con varias fotos y videos seguidos**: al elegir «Cámara» en el menú de adjuntos ya no se sale del visor después de cada foto. Cada foto queda en una tira (se puede quitar), hay un modo «Video» para grabar con sonido, y «Listo» agrega todo al mensaje de una vez. Antes la cámara solo sacaba una foto y no grababa video.
 - **Fotos y videos agrupados**: cuando un mensaje trae más de 3 fotos o videos se muestran en una cuadrícula (hasta 4 miniaturas, con «+N» en la última si hay más), como en WhatsApp y Telegram. Tocar una miniatura abre el visor, que ahora permite pasar de una a otra (botones y flechas del teclado) y reproduce los videos.
 - **Mensajes largos divididos automáticamente**: un texto de más de 4000 caracteres ya no obliga a borrar parte: se envía como varios mensajes seguidos, cortando en un salto de línea o un espacio cuando se puede. El tope es de 5 mensajes (20 000 caracteres) y el contador avisa en cuántos se enviará. Los archivos adjuntos y la respuesta van con el primer mensaje. El backend no cambia: cada parte es un mensaje normal.
 - **Vaciar chat**: cualquier chat (1 a 1, grupo o «Mensajes guardados») tiene la opción «Vaciar chat», que elimina el historial solo para quien la usa; los demás participantes conservan sus mensajes. Nuevo `POST /api/v1/conversations/:id/clear` y migración (`20261119120000_conversation_member_cleared_at`). Ver `backend/API.md` 4.7.1.

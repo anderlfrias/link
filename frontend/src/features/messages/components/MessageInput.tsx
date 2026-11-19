@@ -754,8 +754,8 @@ export function MessageInput({
       <CameraCaptureModal
         open={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onCapture={(file) => {
-          addFiles([file]);
+        onCapture={(files) => {
+          addFiles(files);
         }}
       />
 
