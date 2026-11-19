@@ -105,4 +105,75 @@ describe("ImageLightboxProvider and useImageLightbox", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  describe("álbum y video", () => {
+    const album = [
+      { url: "https://example.com/1.jpg", name: "uno.jpg" },
+      { url: "https://example.com/2.mp4", name: "dos.mp4", kind: "video" as const },
+      { url: "https://example.com/3.jpg", name: "tres.jpg" },
+    ];
+
+    function AlbumConsumer({ start = 0 }: { start?: number }) {
+      const { open } = useImageLightbox();
+      return (
+        <button type="button" onClick={() => open(album[start], album)}>
+          Abrir álbum
+        </button>
+      );
+    }
+
+    function openAlbum(start = 0) {
+      render(
+        <ImageLightboxProvider>
+          <AlbumConsumer start={start} />
+        </ImageLightboxProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Abrir álbum" }));
+    }
+
+    it("abre en la foto elegida con contador y navegación", () => {
+      openAlbum(1);
+
+      expect(screen.getByText("2 / 3")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Anterior" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Siguiente" })).toBeInTheDocument();
+    });
+
+    it("pasa de uno a otro con los botones y con las flechas del teclado, dando la vuelta", () => {
+      openAlbum(0);
+
+      fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+      expect(screen.getByText("2 / 3")).toBeInTheDocument();
+
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      expect(screen.getByText("3 / 3")).toBeInTheDocument();
+
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      expect(screen.getByText("1 / 3")).toBeInTheDocument();
+
+      fireEvent.keyDown(window, { key: "ArrowLeft" });
+      expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    });
+
+    it("un video se muestra con reproductor y ofrece descargar video", () => {
+      openAlbum(1);
+
+      const video = document.querySelector("video");
+      expect(video).not.toBeNull();
+      expect(video).toHaveAttribute("src", "https://example.com/2.mp4");
+      expect(screen.getByRole("button", { name: "Descargar video" })).toBeInTheDocument();
+    });
+
+    it("sin álbum no hay contador ni botones de navegación", () => {
+      render(
+        <ImageLightboxProvider>
+          <TestConsumer />
+        </ImageLightboxProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Abrir imagen" }));
+
+      expect(screen.queryByRole("button", { name: "Siguiente" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/ \/ /)).not.toBeInTheDocument();
+    });
+  });
 });
