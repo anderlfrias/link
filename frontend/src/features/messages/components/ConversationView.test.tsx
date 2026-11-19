@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConversationView } from "./ConversationView";
 import type { Message } from "@/features/messages/types/message.types";
@@ -234,6 +234,19 @@ describe("ConversationView", () => {
     await user.type(textarea, "¡Hola María! Todo bien.{Enter}");
 
     expect(mockSend).toHaveBeenCalledWith("¡Hola María! Todo bien.", undefined, undefined, undefined);
+  });
+
+  it("un texto de más de 4000 caracteres se envía como varios mensajes consecutivos", async () => {
+    mockSend.mockResolvedValue(undefined);
+    render(<ConversationView conversationId="conv-1" />);
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje");
+    fireEvent.change(textarea, { target: { value: "a".repeat(4500) } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(2));
+    expect(mockSend).toHaveBeenNthCalledWith(1, "a".repeat(4000), undefined, undefined, undefined);
+    expect(mockSend).toHaveBeenNthCalledWith(2, "a".repeat(500), undefined, undefined, undefined);
   });
 
   it("adjunta una imagen al disparar el evento de pegado global en la conversación", () => {

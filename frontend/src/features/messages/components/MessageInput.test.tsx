@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageInput } from "./MessageInput";
 import { getDraft, setDraft, resetDraftCache } from "@/features/messages/lib/draft-store";
@@ -852,7 +852,7 @@ describe("MessageInput", () => {
     expect(screen.getByRole("heading", { name: "Crear encuesta" })).toBeInTheDocument();
   });
 
-  it("bloquea el envío y muestra advertencia cuando el texto supera 4000 caracteres", () => {
+  it("bloquea el envío y muestra advertencia cuando el texto supera el tope de 5 mensajes (20000)", () => {
     const onSend = vi.fn();
     render(
       <MessageInput
@@ -868,7 +868,7 @@ describe("MessageInput", () => {
     );
 
     const textarea = screen.getByPlaceholderText("Escribí un mensaje");
-    const longText = "a".repeat(4001);
+    const longText = "a".repeat(20001);
 
     fireEvent.change(textarea, { target: { value: longText } });
 
@@ -880,7 +880,63 @@ describe("MessageInput", () => {
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
 
     expect(onSend).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("El mensaje excede el límite máximo de 4000 caracteres.");
+    expect(screen.getByRole("alert")).toHaveTextContent("El mensaje excede el límite máximo de 20000 caracteres");
+  });
+
+  it("un texto de más de 4000 caracteres se puede enviar: se divide en varios mensajes", async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MessageInput
+        conversationId="conv-1"
+        onSend={onSend}
+        onTyping={vi.fn()}
+        onStopTyping={vi.fn()}
+        attachmentsState={defaultAttachmentsState as any}
+        replyTo={null}
+        onCancelReply={vi.fn()}
+        currentUserId="current-u"
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje");
+    fireEvent.change(textarea, { target: { value: "a".repeat(8000) } });
+
+    expect(screen.getByText(/8000 \/ 20000 · se enviará en 2 mensajes/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enviar mensaje" })).toBeEnabled();
+
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2));
+    expect(onSend).toHaveBeenNthCalledWith(1, "a".repeat(4000), undefined);
+    // La segunda parte avisa que es continuación (no repite la respuesta).
+    expect(onSend).toHaveBeenNthCalledWith(2, "a".repeat(4000), undefined, undefined, true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("si una parte falla, devuelve al composer solo lo que no se envió", async () => {
+    const onSend = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Sin conexión"));
+    render(
+      <MessageInput
+        conversationId="conv-1"
+        onSend={onSend}
+        onTyping={vi.fn()}
+        onStopTyping={vi.fn()}
+        attachmentsState={defaultAttachmentsState as any}
+        replyTo={null}
+        onCancelReply={vi.fn()}
+        currentUserId="current-u"
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("Escribí un mensaje") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "a".repeat(4000) + "b".repeat(1000) } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Sin conexión"));
+    expect(textarea.value).toBe("b".repeat(1000));
   });
 
   it("muestra contador de caracteres al aproximarse al límite de 4000", () => {
@@ -899,7 +955,7 @@ describe("MessageInput", () => {
 
     const textarea = screen.getByPlaceholderText("Escribí un mensaje");
 
-    // Con menos de 3500 no se muestra el contador
+    // Con menos de 3500 no se muestra el contador (el tope por mensaje sigue siendo 4000)
     fireEvent.change(textarea, { target: { value: "a".repeat(3499) } });
     expect(screen.queryByText(/3499 \/ 4000/)).not.toBeInTheDocument();
 
@@ -907,11 +963,14 @@ describe("MessageInput", () => {
     fireEvent.change(textarea, { target: { value: "a".repeat(3500) } });
     expect(screen.getByText("3500 / 4000")).toBeInTheDocument();
 
-    // Al superar 4000 muestra clase de error
+    // Al superar 4000 ya no es un error: se divide, y el contador pasa a mostrar el tope total
     fireEvent.change(textarea, { target: { value: "a".repeat(4005) } });
-    const counter = screen.getByText("4005 / 4000");
-    expect(counter).toBeInTheDocument();
-    expect(counter).toHaveClass("text-red-500");
+    const counter = screen.getByText(/4005 \/ 20000 · se enviará en 2 mensajes/);
+    expect(counter).not.toHaveClass("text-red-500");
+
+    // Solo al superar el tope total (5 mensajes) pasa a error
+    fireEvent.change(textarea, { target: { value: "a".repeat(20005) } });
+    expect(screen.getByText("20005 / 20000")).toHaveClass("text-red-500");
   });
 
   it("muestra mensaje de error cuando onSend falla y restaura el borrador", async () => {
