@@ -162,6 +162,19 @@ describe("message.repository", () => {
       );
     });
 
+    it("excluye lo anterior al vaciado del chat cuando se pasa clearedAt", async () => {
+      vi.mocked(prisma.message.findMany).mockResolvedValue([]);
+      const clearedAt = new Date("2026-01-01T00:00:00Z");
+
+      await listMessages("conv-1", { limit: 10, clearedAt });
+
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { conversationId: "conv-1", createdAt: { gt: clearedAt } },
+        }),
+      );
+    });
+
     it("no agrega filtro de content si la query consiste solo en espacios", async () => {
       vi.mocked(prisma.message.findMany).mockResolvedValue([]);
 
@@ -190,6 +203,24 @@ describe("message.repository", () => {
           take: 10,
           cursor: { id: "file-cursor" },
           skip: 1,
+        }),
+      );
+    });
+  });
+
+  describe("listFiles con vaciado", () => {
+    it("excluye los archivos de mensajes anteriores al vaciado del chat", async () => {
+      vi.mocked(prisma.messageFile.findMany).mockResolvedValue([]);
+      const clearedAt = new Date("2026-01-01T00:00:00Z");
+
+      await listFiles("conv-1", { limit: 10, clearedAt });
+
+      expect(prisma.messageFile.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            message: { conversationId: "conv-1", deletedAt: null, createdAt: { gt: clearedAt } },
+            file: { deletedAt: null },
+          },
         }),
       );
     });

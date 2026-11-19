@@ -408,9 +408,15 @@ Solo `GROUP`. Ids que ya son miembros se ignoran en silencio; si no queda ningú
 Comportamiento distinto según el tipo:
 
 - **`GROUP`** ("Eliminar grupo"): borrado lógico para todos los miembros. Requiere `AppSettings.allowGroupDelete: true` (interruptor maestro, `403` si está en `false` — sin excepción, ni un admin de la app puede saltearlo) y, además, `AppSettings.whoCanDeleteGroup` (ver 4.8). Emite `conversation:deleted` a la room **y** `conversation:updated` a la room personal de cada miembro.
-- **`PRIVATE`** ("Eliminar chat"): borrado **"para mí"** — oculta la conversación solo para quien la pide (`ConversationMember.hiddenAt`), sin afectar al otro participante ni su historial. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`). Reaparece sola en la lista de quien la ocultó si el otro miembro le escribe de nuevo, o si el propio usuario reinicia el chat con ese contacto (`POST /` reusando la conversación existente). Emite `conversation:deleted` **solo** a la room personal de quien la eliminó.
+- **`PRIVATE`** y **`SELF`** ("Eliminar chat"): borrado **"para mí"** — oculta la conversación **y vacía su historial** solo para quien la pide (`ConversationMember.hiddenAt` y `clearedAt`; si reaparece, arranca vacía), sin afectar al otro participante ni su historial. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`). Reaparece sola en la lista de quien la ocultó si el otro miembro le escribe de nuevo, o si el propio usuario reinicia el chat con ese contacto (`POST /` reusando la conversación existente). Emite `conversation:deleted` **solo** a la room personal de quien la eliminó.
 
 → `200` `{ "conversationId": "..." }` en ambos casos.
+
+### 4.7.1 `POST /:id/clear` — Vaciar chat
+
+Elimina el historial **solo para quien lo pide** (`ConversationMember.clearedAt`): el resto de los miembros conserva sus mensajes y la conversación sigue en la lista, vacía. Cualquier tipo de conversación (`PRIVATE`, `SELF`, `GROUP`). Los mensajes anteriores al vaciado dejan de verse en `GET /:id/messages` (y su búsqueda), `GET /:id/files`, `unreadCount` y `lastMessagePreview`. Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`).
+
+→ `200` `{ "conversationId": "..." }`. Emite `conversation:cleared` **solo** a la room personal de quien lo pidió (todas sus pestañas y dispositivos), con `{ conversationId }`.
 
 ### 4.8 Quién puede hacer qué
 

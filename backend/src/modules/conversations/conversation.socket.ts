@@ -27,6 +27,8 @@ export const CONVERSATION_EVENTS = {
   /// privada, no algo que el resto de los miembros deba ver.
   MEMBER_PREFERENCE_CHANGED: "conversation:member_preference_changed",
   DELETED: "conversation:deleted",
+  /// "Vaciar chat" (solo para quien lo pidió) — se emite únicamente a su room personal.
+  CLEARED: "conversation:cleared",
   /// Confirmación de entrega/lectura: el `lastRead*`/`lastDelivered*` de un
   /// miembro avanzó. `kind` distingue cuál de los dos cambió — ver
   /// `markConversationRead`/`markDelivered` en conversation.service.ts.

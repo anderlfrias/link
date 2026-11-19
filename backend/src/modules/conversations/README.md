@@ -24,6 +24,7 @@ Base: `/api/v1/conversations`
 | `GET` | `/:id` | Detalle de una conversación (requiere ser miembro). |
 | `PATCH` | `/:id` | Renombra o cambia la imagen (solo `GROUP`). |
 | `DELETE` | `/:id` | Borrado lógico. |
+| `POST` | `/:id/clear` | Vacía el chat solo para el usuario que llama (cualquier tipo). |
 | `POST` | `/:id/members` | Agrega miembros (solo `GROUP`). |
 | `DELETE` | `/:id/members/:userId` | Quita un miembro o sale de la conversación. |
 | `PATCH` | `/:id/members/:userId/admin` | Promueve/degrada a un miembro como admin de ese grupo (solo `GROUP`). |
@@ -89,7 +90,11 @@ Solo `GROUP`. Ids ya miembros se ignoran silenciosamente (no es error); si no qu
 Comportamiento distinto según el tipo — ver [`ConversationMember.hiddenAt`](#eliminar-chat-borrado-para-mí) para el detalle de `PRIVATE`:
 
 * **`GROUP`**: borrado lógico (`Conversation.deletedAt`) para **todos** los miembros. Requiere `AppSettings.allowGroupDelete` en `true` (interruptor maestro — `403` si está en `false`, sin excepción ni siquiera para un admin de la app) y, además, sujeto a `AppSettings.whoCanDeleteGroup` (ver [Autorización](#autorización)). Emite `conversation:deleted` a la room de la conversación **y** `conversation:updated` a la room personal de cada miembro (mismo criterio que `DELETE /:id/members/:userId` de arriba).
-* **`PRIVATE`**: **"para mí"** — oculta la conversación solo para quien la borra (`ConversationMember.hiddenAt`), el otro miembro no se entera y conserva la conversación intacta con todo su historial. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete` en `true` (`403` si está en `false`). Emite `conversation:deleted` **solo** a la room personal de quien la borró.
+* **`PRIVATE`** (y `SELF`): **"para mí"** — oculta la conversación **y vacía su historial** solo para quien la borra (`ConversationMember.hiddenAt` + `clearedAt`), el otro miembro no se entera y conserva la conversación intacta con todo su historial. Si reaparece, arranca vacía. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete` en `true` (`403` si está en `false`). Emite `conversation:deleted` **solo** a la room personal de quien la borró.
+
+### `POST /:id/clear` — Vaciar chat
+
+Elimina el historial **solo para quien lo pide** (`ConversationMember.clearedAt`, ver [Vaciar chat](#vaciar-chat-historial-solo-para-mí)); el resto de los miembros conserva sus mensajes y la conversación sigue en la lista, vacía. Cualquier tipo de conversación. Requiere `AppSettings.allowConversationDelete` en `true` (`403` si está en `false`). Devuelve `200` `{ "conversationId": "..." }` y emite `conversation:cleared` **solo** a la room personal de quien lo pidió.
 
 ### `PATCH /:id/members/:userId/admin` — Promover/degradar admin de grupo
 
@@ -183,6 +188,10 @@ No existe un endpoint para "desocultar" explícitamente — reaparece sola, sin 
 * **Se reinicia el chat con ese contacto** (`POST /` de arriba, camino de reuso de `PRIVATE` existente): si quien pide la conversación la tenía oculta, `createConversation` le limpia `hiddenAt` antes de devolverla.
 
 Es idempotente eliminar un chat ya oculto (vuelve a fijar `hiddenAt` a la fecha actual, sin error) y no genera ningún `AuditLog` — es preferencia/estado personal, mismo criterio que [Fijar y favoritos](#fijar-y-favoritos), no una acción sobre la conversación en sí.
+
+## Vaciar chat (historial "solo para mí")
+
+`ConversationMember.clearedAt` (`DateTime?`, default `null`) es el instante del último "Vaciar chat" (`POST /:id/clear`) o "Eliminar chat" de ese miembro. Los mensajes con `createdAt <= clearedAt` no se le muestran más: `GET .../messages` y su búsqueda, `GET .../files`, el contador `unreadCount` y el `lastMessagePreview` de la lista lo respetan. No se borra ninguna fila de `Message`, por eso el resto de los miembros no ve ningún cambio. Mandar mensajes después funciona normal: solo se ven los posteriores al vaciado.
 
 ## Fijar y favoritos
 

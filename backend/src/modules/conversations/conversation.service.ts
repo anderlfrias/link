@@ -298,6 +298,11 @@ export async function getOrCreateSelfChat(currentUserId: string): Promise<Conver
   return conversation;
 }
 
+function latestDate(a?: Date | null, b?: Date | null): Date | null {
+  if (a && b) return a > b ? a : b;
+  return a ?? b ?? null;
+}
+
 export async function listConversations(currentUserId: string) {
   const conversations = await ConversationRepository.listForUser(currentUserId);
 
@@ -312,11 +317,9 @@ export async function listConversations(currentUserId: string) {
   const results = await Promise.all(
     conversations.map(async (conversation) => {
       const membership = conversation.members.find((member) => member.userId === currentUserId);
-      const unreadCount = await ConversationRepository.countUnread(
-        conversation.id,
-        currentUserId,
-        membership?.lastReadAt ?? null,
-      );
+      // Lo anterior al último "Vaciar chat" no cuenta como no leído.
+      const unreadSince = latestDate(membership?.lastReadAt, membership?.clearedAt);
+      const unreadCount = await ConversationRepository.countUnread(conversation.id, currentUserId, unreadSince);
 
       // Un "recibo" solo tiene sentido para el mensaje que YO envié — nadie
       // necesita saber si "leyó" un mensaje ajeno.
@@ -329,7 +332,12 @@ export async function listConversations(currentUserId: string) {
         lastMessageStatus = aggregateReceiptStatus(receipts);
       }
 
-      const lastMessage = conversation.lastMessageId ? lastMessageById.get(conversation.lastMessageId) : undefined;
+      // Si el último mensaje es anterior a mi "Vaciar chat", para mí el chat está vacío.
+      const lastMessageCleared = Boolean(
+        membership?.clearedAt && conversation.lastMessageAt && conversation.lastMessageAt <= membership.clearedAt,
+      );
+      const lastMessage =
+        conversation.lastMessageId && !lastMessageCleared ? lastMessageById.get(conversation.lastMessageId) : undefined;
       const lastMessagePreview = lastMessage ? buildLastMessagePreview(lastMessage) : null;
 
       return {
@@ -578,10 +586,31 @@ export async function deleteConversation(currentUserId: string, conversationId: 
   if (!settings.allowConversationDelete) {
     throw new ForbiddenError("Conversation deletion is disabled by an administrator");
   }
-  await ConversationRepository.setMemberHidden(conversationId, currentUserId, new Date());
+  // Además de ocultarla, se vacía para mí: si no, al reaparecer (reabrir "Mensajes
+  // guardados", o escribirle de nuevo al contacto) volvería todo el historial.
+  await ConversationRepository.setMemberCleared(conversationId, currentUserId, new Date(), true);
   // Solo a MI room personal — el otro miembro no debe enterarse ni ver su
   // chat afectado, es un borrado exclusivamente "para mí".
   getIO().to(userRoomName(currentUserId)).emit(CONVERSATION_EVENTS.DELETED, { conversationId });
+
+  return { conversationId };
+}
+
+/// "Vaciar chat": elimina el historial SOLO para quien lo pide (ver
+/// ConversationMember.clearedAt) — el resto de los miembros conserva sus mensajes, y la
+/// conversación sigue en la lista, vacía. Disponible en cualquier tipo de conversación y
+/// gobernado por el mismo interruptor que "Eliminar chat" (`allowConversationDelete`): para el
+/// usuario es la misma capacidad de quitarse mensajes de encima.
+export async function clearConversation(currentUserId: string, conversationId: string) {
+  await assertMembership(conversationId, currentUserId);
+  const settings = await SettingsService.getSettings();
+  if (!settings.allowConversationDelete) {
+    throw new ForbiddenError("Conversation deletion is disabled by an administrator");
+  }
+
+  await ConversationRepository.setMemberCleared(conversationId, currentUserId, new Date());
+  // Solo a MI room personal (todas mis pestañas/dispositivos): vacían la vista y refrescan la lista.
+  getIO().to(userRoomName(currentUserId)).emit(CONVERSATION_EVENTS.CLEARED, { conversationId });
 
   return { conversationId };
 }

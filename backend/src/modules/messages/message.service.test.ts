@@ -544,6 +544,8 @@ describe("message.service", () => {
       expect(MessageRepository.listMessages).toHaveBeenCalledWith("conv-1", {
         beforeId: undefined,
         limit: 50,
+        query: undefined,
+        clearedAt: null,
       });
       expect(ConversationService.markDelivered).toHaveBeenCalledWith(
         "conv-1",
@@ -555,6 +557,23 @@ describe("message.service", () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe("m-1");
       expect(result[1].id).toBe("m-2");
+    });
+
+    it("pasa al repositorio el vaciado del chat del usuario que pide el historial", async () => {
+      const clearedAt = new Date("2026-01-01T00:00:00Z");
+      const mockConv = buildMockConversation();
+      mockConv.members = mockConv.members.map((member: { userId: string }) =>
+        member.userId === "u-1" ? { ...member, clearedAt } : member,
+      );
+      vi.mocked(ConversationService.assertMembership).mockResolvedValue(mockConv as any);
+      vi.mocked(MessageRepository.listMessages).mockResolvedValue([]);
+
+      await listMessages("u-1", "conv-1", { limit: 10 });
+
+      expect(MessageRepository.listMessages).toHaveBeenCalledWith(
+        "conv-1",
+        expect.objectContaining({ clearedAt }),
+      );
     });
 
     it("incluye mensajes eliminados pero con contenido y adjuntos saneados", async () => {
@@ -639,6 +658,7 @@ describe("message.service", () => {
         beforeId: undefined,
         limit: 20,
         query: "hola",
+        clearedAt: null,
       });
       expect(ConversationService.markDelivered).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);

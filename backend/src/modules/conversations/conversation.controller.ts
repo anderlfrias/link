@@ -138,6 +138,15 @@ export async function removeMember(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function clear(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await ConversationService.clearConversation(currentUserId(req), req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function setPinned(req: Request, res: Response, next: NextFunction) {
   try {
     const { isPinned } = req.body as { isPinned: boolean };

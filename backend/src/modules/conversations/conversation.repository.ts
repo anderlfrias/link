@@ -175,6 +175,15 @@ export function setMemberHidden(conversationId: string, userId: string, hiddenAt
   });
 }
 
+/// "Vaciar chat" para un solo miembro (ver ConversationMember.clearedAt). Con `hide` también
+/// oculta la conversación — es lo que hace "Eliminar chat", así al reaparecer arranca vacía.
+export function setMemberCleared(conversationId: string, userId: string, clearedAt: Date, hide = false) {
+  return prisma.conversationMember.update({
+    where: { conversationId_userId: { conversationId, userId } },
+    data: { clearedAt, ...(hide ? { hiddenAt: clearedAt } : {}) },
+  });
+}
+
 /// "Reaparición" en bloque de un chat oculto — ver notifyConversationListChanged
 /// en message.service.ts, que la llama en cada mensaje nuevo (para todos los
 /// miembros de la conversación, no solo el destinatario: si el propio remitente
@@ -250,6 +259,8 @@ export async function markDelivered(
   return result.count > 0;
 }
 
+/// `since` es el límite inferior (exclusivo): la última lectura o el último vaciado del chat,
+/// lo que sea más reciente — lo calcula el service.
 export function countUnread(conversationId: string, userId: string, since: Date | null) {
   return prisma.message.count({
     where: {

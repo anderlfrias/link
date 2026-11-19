@@ -515,10 +515,12 @@ export async function listMessages(
   const conversation = await assertMembership(conversationId, currentUserId);
 
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const clearedAt = conversation.members.find((member) => member.userId === currentUserId)?.clearedAt ?? null;
   const messages = await MessageRepository.listMessages(conversationId, {
     beforeId: options.beforeId,
     limit,
     query: options.query,
+    clearedAt,
   });
   const ordered = messages.reverse();
 
@@ -546,10 +548,11 @@ export async function listConversationFiles(
   conversationId: string,
   options: ListConversationFilesOptions,
 ): Promise<ConversationFileResponse[]> {
-  await assertMembership(conversationId, currentUserId);
+  const conversation = await assertMembership(conversationId, currentUserId);
 
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
-  const entries = await MessageRepository.listFiles(conversationId, { beforeId: options.beforeId, limit });
+  const clearedAt = conversation.members.find((member) => member.userId === currentUserId)?.clearedAt ?? null;
+  const entries = await MessageRepository.listFiles(conversationId, { beforeId: options.beforeId, limit, clearedAt });
 
   return entries.map((entry) => ({
     ...toStoredFileResponse(entry.file, currentUserId),

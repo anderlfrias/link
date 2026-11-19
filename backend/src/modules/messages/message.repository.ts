@@ -134,11 +134,16 @@ export function createMessage(data: {
 /// Paginación por cursor (`beforeId`), más reciente primero. El service
 /// invierte el orden antes de responder para que el cliente reciba los
 /// mensajes en orden cronológico ascendente.
-export function listMessages(conversationId: string, options: { beforeId?: string; limit: number; query?: string }) {
+export function listMessages(
+  conversationId: string,
+  options: { beforeId?: string; limit: number; query?: string; clearedAt?: Date | null },
+) {
   const trimmedQuery = options.query?.trim();
   return prisma.message.findMany({
     where: {
       conversationId,
+      // "Vaciar chat" para mí: lo anterior no se me muestra (ConversationMember.clearedAt).
+      ...(options.clearedAt ? { createdAt: { gt: options.clearedAt } } : {}),
       ...(trimmedQuery
         ? {
             deletedAt: null,
@@ -160,9 +165,19 @@ export function listMessages(conversationId: string, options: { beforeId?: strin
 /// reciente primero — mismo criterio de paginación por cursor que
 /// `listMessages` (el panel de detalle de la conversación, tipo
 /// WhatsApp/Telegram, pagina esto igual que el historial de mensajes).
-export function listFiles(conversationId: string, options: { beforeId?: string; limit: number }) {
+export function listFiles(
+  conversationId: string,
+  options: { beforeId?: string; limit: number; clearedAt?: Date | null },
+) {
   return prisma.messageFile.findMany({
-    where: { message: { conversationId, deletedAt: null }, file: { deletedAt: null } },
+    where: {
+      message: {
+        conversationId,
+        deletedAt: null,
+        ...(options.clearedAt ? { createdAt: { gt: options.clearedAt } } : {}),
+      },
+      file: { deletedAt: null },
+    },
     include: fileWithRelations,
     orderBy: { createdAt: "desc" },
     take: options.limit,

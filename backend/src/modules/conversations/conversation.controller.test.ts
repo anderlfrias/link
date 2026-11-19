@@ -8,6 +8,7 @@ vi.mock("./conversation.service", () => ({
   getConversation: vi.fn(),
   updateConversation: vi.fn(),
   deleteConversation: vi.fn(),
+  clearConversation: vi.fn(),
   setMemberAdminStatus: vi.fn(),
   getGroupSettings: vi.fn(),
   updateGroupSettings: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("./conversation.service", () => ({
 import * as ConversationService from "./conversation.service";
 import {
   addMembers,
+  clear,
   create,
   getById,
   getGroupSettings,
@@ -229,6 +231,30 @@ describe("conversation.controller", () => {
     vi.mocked(ConversationService.removeMember).mockResolvedValue({ conversationId: "c-1", userId: "u-3" });
     await removeMember(reqRemove, resRemove, nextRemove);
     expect(resRemove.json).toHaveBeenCalledWith({ conversationId: "c-1", userId: "u-3" });
+  });
+
+  it("clear: vacía el chat del usuario actual y responde el resultado", async () => {
+    const req = createMockRequest({ user: mockUser as any, params: { id: "c-1" } });
+    const res = createMockResponse();
+    const next = createMockNext();
+    vi.mocked(ConversationService.clearConversation).mockResolvedValue({ conversationId: "c-1" });
+
+    await clear(req, res, next);
+
+    expect(ConversationService.clearConversation).toHaveBeenCalledWith("u-internal-1", "c-1");
+    expect(res.json).toHaveBeenCalledWith({ conversationId: "c-1" });
+  });
+
+  it("clear: delega el error a next", async () => {
+    const req = createMockRequest({ user: mockUser as any, params: { id: "c-1" } });
+    const res = createMockResponse();
+    const next = createMockNext();
+    const error = new Error("boom");
+    vi.mocked(ConversationService.clearConversation).mockRejectedValue(error);
+
+    await clear(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
   });
 
   it("setPinned, setFavorite y markRead: mapean correctamente", async () => {

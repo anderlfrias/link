@@ -36,6 +36,7 @@ router.patch(
 );
 router.get("/:id/settings", ConversationController.getGroupSettings);
 router.patch("/:id/settings", validateBody(updateGroupSettingsSchema), ConversationController.updateGroupSettings);
+router.post("/:id/clear", ConversationController.clear);
 router.patch("/:id/pin", validateBody(setPinnedSchema), ConversationController.setPinned);
 router.patch("/:id/favorite", validateBody(setFavoriteSchema), ConversationController.setFavorite);
 router.post("/:id/read", validateBody(markReadSchema), ConversationController.markRead);

@@ -374,6 +374,14 @@ model ConversationMember {
   /// duplicar nunca la fila de Conversation/ConversationMember.
   hiddenAt DateTime? @map("hidden_at")
 
+  /// "Vaciar chat" (y "Eliminar chat") SOLO para este miembro: los mensajes
+  /// con `createdAt <= clearedAt` no se le muestran más (ni en el historial, ni
+  /// en la búsqueda, ni en archivos, ni en el contador de no leídos), pero siguen
+  /// existiendo para el resto de los miembros — por eso es una marca de tiempo
+  /// por miembro y no un borrado de filas de `Message`. Aplica a cualquier tipo
+  /// de conversación (PRIVATE, SELF y GROUP).
+  clearedAt DateTime? @map("cleared_at")
+
   /// Un usuario solo puede tener una membresía por conversación.
   @@unique([conversationId, userId])
   @@map("conversation_members")
