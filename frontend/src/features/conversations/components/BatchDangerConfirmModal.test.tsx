@@ -106,7 +106,7 @@ describe("BatchDangerConfirmModal", () => {
     );
 
     expect(screen.getByText("¿Eliminar 2 conversaciones?")).toBeInTheDocument();
-    expect(screen.getByText(/Se eliminarán 1 chats? de tu lista y 1 grupos? de forma definitiva/i)).toBeInTheDocument();
+    expect(screen.getByText(/Se eliminarán 1 chats? de tu lista, con todos sus mensajes y solo para ti, y 1 grupos? de forma definitiva/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Eliminar 2 conversaciones" })).toBeInTheDocument();
   });
 
