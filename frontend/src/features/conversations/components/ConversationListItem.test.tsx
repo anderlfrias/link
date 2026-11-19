@@ -88,6 +88,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -111,6 +112,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -137,6 +139,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -165,6 +168,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -192,6 +196,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -215,6 +220,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -240,6 +246,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -262,6 +269,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
       />,
@@ -285,6 +293,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
         isSelectionMode={true}
@@ -315,6 +324,7 @@ describe("ConversationListItem", () => {
         onTogglePin={vi.fn()}
         onToggleFavorite={vi.fn()}
         onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={vi.fn()}
         onRequestDeleteGroup={vi.fn()}
         onRequestLeaveGroup={vi.fn()}
         onEnterSelectionMode={onEnterSelectionMode}
@@ -327,5 +337,27 @@ describe("ConversationListItem", () => {
     fireEvent.click(selectBtn);
     expect(onEnterSelectionMode).toHaveBeenCalledWith("conv-1");
   });
-});
 
+  it("el menú ofrece 'Vaciar chat' (también en grupos) y avisa con el id", () => {
+    const onRequestClearChat = vi.fn();
+    render(
+      <ConversationListItem
+        conversation={{ ...baseConversation, type: "GROUP" }}
+        currentUserId="user-1"
+        pending={false}
+        menuOpen={true}
+        onOpenMenu={vi.fn()}
+        onCloseMenu={vi.fn()}
+        onTogglePin={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onRequestDeleteChat={vi.fn()}
+        onRequestClearChat={onRequestClearChat}
+        onRequestDeleteGroup={vi.fn()}
+        onRequestLeaveGroup={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Vaciar chat/i }));
+    expect(onRequestClearChat).toHaveBeenCalledWith(baseConversation.id);
+  });
+});

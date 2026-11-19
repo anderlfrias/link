@@ -58,6 +58,7 @@ describe("ConversationDetailPanel", () => {
   const mockPush = vi.fn();
   const mockUpdateFn = vi.fn();
   const mockDeleteFn = vi.fn();
+  const mockClearFn = vi.fn();
   const mockLeaveFn = vi.fn();
   const mockSetAdminFn = vi.fn();
 
@@ -233,6 +234,7 @@ describe("ConversationDetailPanel", () => {
     });
     vi.mocked(useDeleteConversation).mockReturnValue({
       remove: mockDeleteFn,
+      clear: mockClearFn,
       pending: false,
       error: null,
     });
@@ -334,6 +336,47 @@ describe("ConversationDetailPanel", () => {
       expect(onClose).toHaveBeenCalled();
       expect(mockPush).toHaveBeenCalledWith("/");
     });
+  });
+
+  it("vaciar chat: confirma, llama a clear y NO cierra el panel ni navega", async () => {
+    mockClearFn.mockResolvedValueOnce(true);
+    const onClose = vi.fn();
+
+    render(
+      <ConversationDetailPanel
+        conversation={privateConv}
+        currentUserId="user-1"
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Vaciar chat/i }));
+    expect(screen.getByRole("heading", { name: "Vaciar chat" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Vaciar chat" })[1]);
+
+    await waitFor(() => {
+      expect(mockClearFn).toHaveBeenCalledWith("priv-1");
+    });
+    expect(mockDeleteFn).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("no ofrece 'Vaciar chat' si el admin desactivó el borrado de conversaciones", () => {
+    vi.mocked(usePublicSettings).mockReturnValue({
+      allowConversationDelete: false,
+      allowGroupDelete: true,
+    } as any);
+
+    render(
+      <ConversationDetailPanel
+        conversation={privateConv}
+        currentUserId="user-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Vaciar chat/i })).not.toBeInTheDocument();
   });
 
   it("opens leave group modal for group conversation", async () => {

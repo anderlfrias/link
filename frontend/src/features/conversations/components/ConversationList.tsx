@@ -30,7 +30,7 @@ interface ConversationListProps {
   onEnterSelectionMode?: () => void;
 }
 
-type PendingAction = { conversationId: string; kind: "delete-chat" | "delete-group" | "leave-group" };
+type PendingAction = { conversationId: string; kind: "delete-chat" | "clear-chat" | "delete-group" | "leave-group" };
 
 export function ConversationList({
   conversations,
@@ -45,7 +45,7 @@ export function ConversationList({
   const { t } = useTranslation();
   const { session } = useAuth();
   const { setPinned, setFavorite, pendingId } = useSetConversationPreference();
-  const { remove: deleteConversation, pending: deletePending, error: deleteError } = useDeleteConversation();
+  const { remove: deleteConversation, clear: clearConversation, pending: deletePending, error: deleteError } = useDeleteConversation();
   const { leave: leaveGroup, pending: leavePending, error: leaveError } = useLeaveGroup();
 
   // Modo selección: soporta control externo o interno
@@ -236,7 +236,9 @@ export function ConversationList({
     const ok =
       pendingAction.kind === "leave-group"
         ? await leaveGroup(pendingAction.conversationId)
-        : await deleteConversation(pendingAction.conversationId);
+        : pendingAction.kind === "clear-chat"
+          ? await clearConversation(pendingAction.conversationId)
+          : await deleteConversation(pendingAction.conversationId);
     if (ok) setPendingAction(null);
   }
 
@@ -307,6 +309,7 @@ export function ConversationList({
             onTogglePin={setPinned}
             onToggleFavorite={setFavorite}
             onRequestDeleteChat={(id) => setPendingAction({ conversationId: id, kind: "delete-chat" })}
+            onRequestClearChat={(id) => setPendingAction({ conversationId: id, kind: "clear-chat" })}
             onRequestDeleteGroup={(id) => setPendingAction({ conversationId: id, kind: "delete-group" })}
             onRequestLeaveGroup={(id) => setPendingAction({ conversationId: id, kind: "leave-group" })}
             isSelectionMode={isSelectionMode}
@@ -322,9 +325,11 @@ export function ConversationList({
           title={
             pendingAction.kind === "delete-chat"
               ? t("chatList.deleteChat")
-              : pendingAction.kind === "delete-group"
-                ? t("chatList.deleteGroup")
-                : t("chatList.leaveGroup")
+              : pendingAction.kind === "clear-chat"
+                ? t("chatList.clearChat")
+                : pendingAction.kind === "delete-group"
+                  ? t("chatList.deleteGroup")
+                  : t("chatList.leaveGroup")
           }
           description={
             pendingAction.kind === "delete-chat"
@@ -333,16 +338,20 @@ export function ConversationList({
                     ? getConversationDisplayName(pendingConversation, currentUserId)
                     : t("chatList.otherPerson"),
                 })
-              : pendingAction.kind === "delete-group"
-                ? t("chatList.deleteGroupDescription")
-                : t("chatList.leaveGroupDescription")
+              : pendingAction.kind === "clear-chat"
+                ? t("chatList.clearChatDescription")
+                : pendingAction.kind === "delete-group"
+                  ? t("chatList.deleteGroupDescription")
+                  : t("chatList.leaveGroupDescription")
           }
           confirmLabel={
             pendingAction.kind === "delete-chat"
               ? t("chatList.deleteChat")
-              : pendingAction.kind === "delete-group"
-                ? t("chatList.deleteGroup")
-                : t("chatList.leaveGroup")
+              : pendingAction.kind === "clear-chat"
+                ? t("chatList.clearChat")
+                : pendingAction.kind === "delete-group"
+                  ? t("chatList.deleteGroup")
+                  : t("chatList.leaveGroup")
           }
           pending={pendingAction.kind === "leave-group" ? leavePending : deletePending}
           error={pendingAction.kind === "leave-group" ? leaveError : deleteError}

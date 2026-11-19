@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconCheckbox, IconDoorExit, IconPin, IconPinnedOff, IconStar, IconStarFilled, IconTrash } from "@tabler/icons-react";
+import { IconCheckbox, IconDoorExit, IconEraser, IconPin, IconPinnedOff, IconStar, IconStarFilled, IconTrash } from "@tabler/icons-react";
 import { useTranslation } from "@/i18n";
 
 interface ConversationOptionsMenuProps {
@@ -15,6 +15,9 @@ interface ConversationOptionsMenuProps {
   /** PRIVATE únicamente — "Eliminar chat" (se oculta solo para quien lo borra). Ausente = no
    * mostrar la opción (ej. `allowConversationDelete` en `false`, o es una conversación GROUP). */
   onDeleteChat?: () => void;
+  /** "Vaciar chat" (elimina el historial solo para quien lo pide, cualquier tipo de conversación).
+   * Ausente = no mostrar la opción (ej. `allowConversationDelete` en `false`). */
+  onClearChat?: () => void;
   /** GROUP únicamente — "Eliminar grupo" (para todos los integrantes). */
   onDeleteGroup?: () => void;
   /** GROUP únicamente — "Salir del grupo" (auto-remoción). */
@@ -34,6 +37,7 @@ export function ConversationOptionsMenu({
   onToggleFavorite,
   onSelect,
   onDeleteChat,
+  onClearChat,
   onDeleteGroup,
   onLeaveGroup,
 }: ConversationOptionsMenuProps) {
@@ -93,6 +97,19 @@ export function ConversationOptionsMenu({
         {isFavorite ? <IconStarFilled size={16} /> : <IconStar size={16} stroke={1.75} />}
         {isFavorite ? t("chatList.unmarkFavorite") : t("chatList.markAsFavorite")}
       </button>
+      {onClearChat && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onClearChat();
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-brand-ink hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
+        >
+          <IconEraser size={16} stroke={1.75} />
+          {t("chatList.clearChat")}
+        </button>
+      )}
       {onLeaveGroup && (
         <button
           type="button"

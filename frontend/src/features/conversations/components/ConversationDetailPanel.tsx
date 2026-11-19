@@ -8,6 +8,7 @@ import {
   IconCamera,
   IconCheck,
   IconDoorExit,
+  IconEraser,
   IconLoader2,
   IconPencil,
   IconTrash,
@@ -62,7 +63,7 @@ export function ConversationDetailPanel({ conversation, currentUserId, onClose }
   const publicSettings = usePublicSettings();
   const { update, pending: updating, error: updateError } = useUpdateConversation(conversation.id);
   const { setAdmin, pendingUserId: pendingAdminUserId, error: setAdminError } = useSetMemberAdmin(conversation.id);
-  const { remove: deleteConversation, pending: deletePending, error: deleteError } = useDeleteConversation();
+  const { remove: deleteConversation, clear: clearConversation, pending: deletePending, error: deleteError } = useDeleteConversation();
   const { leave: leaveGroup, pending: leavePending, error: leaveError } = useLeaveGroup();
 
   const isGroup = conversation.type === "GROUP";
@@ -94,12 +95,13 @@ export function ConversationDetailPanel({ conversation, currentUserId, onClose }
     groupSettings != null &&
     canPerformGroupAction(groupSettings.effective.whoCanLeaveGroup, conversation, currentUserId, session?.user.roles ?? []);
   const canDeleteChat = !isGroup && Boolean(publicSettings?.allowConversationDelete);
+  const canClearChat = Boolean(publicSettings?.allowConversationDelete);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(conversation.name ?? "");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
-  const [pendingAction, setPendingAction] = useState<"delete-chat" | "delete-group" | "leave-group" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"delete-chat" | "clear-chat" | "delete-group" | "leave-group" | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   // El nombre puede cambiar por socket (otro miembro lo editó) mientras no
@@ -148,6 +150,11 @@ export function ConversationDetailPanel({ conversation, currentUserId, onClose }
   // conversación abierta, no tiene sentido quedarse mirándola.
   async function confirmPendingAction() {
     if (!pendingAction) return;
+    // "Vaciar chat" no saca al usuario de la conversación: solo se cierra el modal.
+    if (pendingAction === "clear-chat") {
+      if (await clearConversation(conversation.id)) setPendingAction(null);
+      return;
+    }
     const ok = pendingAction === "leave-group" ? await leaveGroup(conversation.id) : await deleteConversation(conversation.id);
     if (ok) {
       setPendingAction(null);
@@ -320,8 +327,18 @@ export function ConversationDetailPanel({ conversation, currentUserId, onClose }
 
         {isGroup && canManageGroup && <GroupSettingsSection conversationId={conversation.id} />}
 
-        {(canLeaveGroup || canDeleteGroup || canDeleteChat) && (
+        {(canLeaveGroup || canDeleteGroup || canDeleteChat || canClearChat) && (
           <div className="mt-4 flex flex-col gap-1">
+            {canClearChat && (
+              <button
+                type="button"
+                onClick={() => setPendingAction("clear-chat")}
+                className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+              >
+                <IconEraser size={18} stroke={1.75} />
+                <p className="font-medium">Vaciar chat</p>
+              </button>
+            )}
             {canLeaveGroup && (
               <button
                 type="button"
@@ -464,15 +481,17 @@ export function ConversationDetailPanel({ conversation, currentUserId, onClose }
 
       {pendingAction && (
         <ConversationDangerConfirmModal
-          title={pendingAction === "delete-chat" ? "Eliminar chat" : pendingAction === "delete-group" ? "Eliminar grupo" : "Salir del grupo"}
+          title={pendingAction === "delete-chat" ? "Eliminar chat" : pendingAction === "clear-chat" ? "Vaciar chat" : pendingAction === "delete-group" ? "Eliminar grupo" : "Salir del grupo"}
           description={
             pendingAction === "delete-chat"
-              ? `Se eliminará esta conversación de tu lista. Si ${displayName} te escribe de nuevo, o si vos le volvés a escribir, va a reaparecer.`
-              : pendingAction === "delete-group"
+              ? `Se eliminará esta conversación de tu lista y todos sus mensajes, solo para vos. Si ${displayName} te escribe de nuevo, o si vos le volvés a escribir, va a reaparecer sin los mensajes anteriores.`
+              : pendingAction === "clear-chat"
+                ? "Se eliminarán todos los mensajes de este chat, solo para vos. Los demás participantes conservan los suyos."
+                : pendingAction === "delete-group"
                 ? "Esta acción no se puede deshacer. El grupo se va a eliminar para todos los integrantes."
                 : "Vas a dejar de ser miembro de este grupo y no vas a poder ver los mensajes nuevos."
           }
-          confirmLabel={pendingAction === "delete-chat" ? "Eliminar chat" : pendingAction === "delete-group" ? "Eliminar grupo" : "Salir del grupo"}
+          confirmLabel={pendingAction === "delete-chat" ? "Eliminar chat" : pendingAction === "clear-chat" ? "Vaciar chat" : pendingAction === "delete-group" ? "Eliminar grupo" : "Salir del grupo"}
           pending={pendingAction === "leave-group" ? leavePending : deletePending}
           error={pendingAction === "leave-group" ? leaveError : deleteError}
           onConfirm={() => void confirmPendingAction()}

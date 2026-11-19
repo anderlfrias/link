@@ -45,6 +45,7 @@ vi.mock("@/features/conversations/api/conversations.api", async (importOriginal)
 
 describe("ConversationList", () => {
   const mockDeleteFn = vi.fn();
+  const mockClearFn = vi.fn();
   const mockLeaveFn = vi.fn();
   const mockSetPinnedFn = vi.fn();
   const mockSetFavoriteFn = vi.fn();
@@ -123,6 +124,7 @@ describe("ConversationList", () => {
     } as any);
     vi.mocked(useDeleteConversation).mockReturnValue({
       remove: mockDeleteFn,
+      clear: mockClearFn,
       pending: false,
       error: null,
     });
@@ -270,6 +272,31 @@ describe("ConversationList", () => {
     await waitFor(() => {
       expect(mockDeleteFn).toHaveBeenCalledWith("c1");
     });
+  });
+
+  it("opens clear chat confirmation modal and calls clear (sin eliminar el chat)", async () => {
+    mockClearFn.mockResolvedValueOnce(true);
+
+    render(
+      <ConversationList
+        conversations={convs}
+        status="ready"
+        searchQuery=""
+        activeFilter="all"
+        currentUserId="user-1"
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText("Juan Perez").closest("a")!);
+    fireEvent.click(screen.getByRole("button", { name: /Vaciar chat/i }));
+
+    expect(screen.getByRole("heading", { name: "Vaciar chat" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vaciar chat" }));
+
+    await waitFor(() => {
+      expect(mockClearFn).toHaveBeenCalledWith("c1");
+    });
+    expect(mockDeleteFn).not.toHaveBeenCalled();
   });
 
   it("renderiza la barra de selección cuando isSelectionMode es true y permite seleccionar todos", async () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useDeleteConversation } from "./use-delete-conversation";
 import { useAuth } from "@/providers/auth-provider";
-import { deleteConversation } from "@/features/conversations/api/conversations.api";
+import { clearConversation, deleteConversation } from "@/features/conversations/api/conversations.api";
 import { createMockSession } from "@/test/test-utils";
 
 vi.mock("@/providers/auth-provider", () => ({
@@ -11,6 +11,7 @@ vi.mock("@/providers/auth-provider", () => ({
 
 vi.mock("@/features/conversations/api/conversations.api", () => ({
   deleteConversation: vi.fn(),
+  clearConversation: vi.fn(),
 }));
 
 describe("useDeleteConversation", () => {
@@ -79,5 +80,59 @@ describe("useDeleteConversation", () => {
 
     expect(ok).toBe(false);
     expect(deleteConversation).not.toHaveBeenCalled();
+  });
+
+  describe("clear (vaciar chat)", () => {
+    it("vacía el chat sin usar el endpoint de borrado", async () => {
+      vi.mocked(clearConversation).mockResolvedValueOnce({ conversationId: "conv-1" });
+
+      const { result } = renderHook(() => useDeleteConversation());
+
+      let ok = false;
+      await act(async () => {
+        ok = await result.current.clear("conv-1");
+      });
+
+      expect(ok).toBe(true);
+      expect(clearConversation).toHaveBeenCalledWith("del-tok", "conv-1");
+      expect(deleteConversation).not.toHaveBeenCalled();
+      expect(result.current.error).toBeNull();
+    });
+
+    it("expone el error si falla", async () => {
+      vi.mocked(clearConversation).mockRejectedValueOnce(new Error("No permitido"));
+
+      const { result } = renderHook(() => useDeleteConversation());
+
+      let ok = true;
+      await act(async () => {
+        ok = await result.current.clear("conv-1");
+      });
+
+      expect(ok).toBe(false);
+      expect(result.current.error).toBe("No permitido");
+    });
+
+    it("devuelve false sin llamar a la API si no hay sesión", async () => {
+      vi.mocked(useAuth).mockReturnValue({
+        session: null,
+        status: "unauthenticated",
+        login: vi.fn(),
+        logout: vi.fn(),
+        updateSessionUser: vi.fn(),
+        expireSession: vi.fn(),
+        completePasswordChange: vi.fn(),
+      });
+
+      const { result } = renderHook(() => useDeleteConversation());
+
+      let ok = true;
+      await act(async () => {
+        ok = await result.current.clear("conv-1");
+      });
+
+      expect(ok).toBe(false);
+      expect(clearConversation).not.toHaveBeenCalled();
+    });
   });
 });
