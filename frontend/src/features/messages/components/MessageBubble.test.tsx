@@ -1243,8 +1243,116 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Videollamada")).toBeInTheDocument();
     expect(screen.queryByText(/\uFFFD/)).not.toBeInTheDocument();
   });
+
+  describe("doble click para responder (desktop)", () => {
+    const fileMessage: Message = {
+      ...baseMessage,
+      content: "",
+      files: [
+        {
+          id: "mf-doc-1",
+          messageId: "msg-1",
+          fileId: "f-doc-1",
+          createdAt: "2026-09-09T10:00:00Z",
+          file: {
+            id: "f-doc-1",
+            url: "/uploads/chat/doc.pdf",
+            path: "chat/doc.pdf",
+            originalName: "informe.pdf",
+            mimeType: "application/pdf",
+            size: 2048,
+            extension: "pdf",
+            provider: "LOCAL",
+            checksum: null,
+            createdById: "user-1",
+            createdAt: "2026-09-09T10:00:00Z",
+            deletedAt: null,
+          },
+        },
+      ],
+    };
+
+    function mockDesktop() {
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes("min-width: 1024px"),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }));
+    }
+
+    function renderBubble(message: Message, isOwn: boolean) {
+      return render(
+        <MessageBubble
+          message={message}
+          isOwn={isOwn}
+          showSender={false}
+          isSelfChat={false}
+          currentUserId={isOwn ? "user-1" : "user-2"}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onReply={onReply}
+          onForward={onForward}
+          onJumpToMessage={onJumpToMessage}
+        />,
+      );
+    }
+
+    it("responde en la fila de un mensaje propio aunque el navegador haya seleccionado texto", () => {
+      mockDesktop();
+      vi.spyOn(window, "getSelection").mockReturnValue({
+        toString: () => "palabra",
+        isCollapsed: false,
+        removeAllRanges: vi.fn(),
+      } as unknown as Selection);
+      const { container } = renderBubble(baseMessage, true);
+
+      fireEvent.doubleClick(container.firstChild as HTMLElement);
+
+      expect(onReply).toHaveBeenCalledWith(baseMessage);
+    });
+
+    it("responde en la fila de un mensaje con archivo, propio o ajeno", () => {
+      mockDesktop();
+      const own = renderBubble(fileMessage, true);
+      fireEvent.doubleClick(own.container.firstChild as HTMLElement);
+      expect(onReply).toHaveBeenCalledTimes(1);
+      own.unmount();
+
+      const other = renderBubble(fileMessage, false);
+      fireEvent.doubleClick(other.container.firstChild as HTMLElement);
+      expect(onReply).toHaveBeenCalledTimes(2);
+    });
+
+    it("no responde al hacer doble click sobre el texto (queda para seleccionar una palabra)", () => {
+      mockDesktop();
+      renderBubble(baseMessage, true);
+
+      fireEvent.doubleClick(screen.getByText("Mensaje original"));
+
+      expect(onReply).not.toHaveBeenCalled();
+    });
+
+    it("no responde al hacer doble click sobre el adjunto (su click abre o descarga)", () => {
+      mockDesktop();
+      renderBubble(fileMessage, true);
+
+      fireEvent.doubleClick(screen.getByText("informe.pdf"));
+
+      expect(onReply).not.toHaveBeenCalled();
+    });
+
+    it("no responde en un mensaje eliminado", () => {
+      mockDesktop();
+      const { container } = renderBubble({ ...baseMessage, deletedAt: "2026-09-09T11:00:00Z" }, true);
+
+      fireEvent.doubleClick(container.firstChild as HTMLElement);
+
+      expect(onReply).not.toHaveBeenCalled();
+    });
+  });
 });
-
-
-
-

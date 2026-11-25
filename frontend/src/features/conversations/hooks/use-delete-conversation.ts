@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
-import { deleteConversation } from "@/features/conversations/api/conversations.api";
+import { clearConversation, deleteConversation } from "@/features/conversations/api/conversations.api";
 
 /** `DELETE /:id` (ver backend/API.md 4.7) — sirve tanto para "Eliminar chat" (PRIVATE, se oculta
  * solo para quien la borra) como "Eliminar grupo" (GROUP, para todos): mismo endpoint, la
@@ -32,5 +32,25 @@ export function useDeleteConversation() {
     [session],
   );
 
-  return { remove, pending, error };
+  /** `POST /:id/clear` — "Vaciar chat" (solo para mí). Comparte `pending`/`error` con `remove`:
+   * en pantalla solo hay un modal de confirmación a la vez. */
+  const clear = useCallback(
+    async (conversationId: string) => {
+      if (!session) return false;
+      setPending(true);
+      setError(null);
+      try {
+        await clearConversation(session.token, conversationId);
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "No se pudo vaciar el chat.");
+        return false;
+      } finally {
+        setPending(false);
+      }
+    },
+    [session],
+  );
+
+  return { remove, clear, pending, error };
 }

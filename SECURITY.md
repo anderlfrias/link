@@ -40,6 +40,14 @@ Solo se corrigen vulnerabilidades sobre la última versión publicada (rama `mai
 - **`GET /health` es público** (Docker no se autentica) y hace un `SELECT 1` por request, sin
   caché. No devuelve ningún detalle de la base. Si el backend se expone a internet, filtrarlo en el
   proxy y dejarlo accesible solo desde la red interna.
+- **`GET /api/v1/instance` y `/.well-known/link-app.json` son públicos.** Los consulta una app
+  móvil antes de iniciar sesión, para saber dónde está el API y confirmar que es un LINK. Solo
+  devuelven las URL del API y del socket (que ya viajan en el JavaScript de la web) y un nivel de
+  compatibilidad y, si un admin lo escribió, **el nombre de la organización** (es público a propósito:
+  se muestra al vincular la app); nunca la versión del backend ni datos de cuentas.
+  `/api/v1/instance` tiene rate limit por IP y lee los ajustes de la caché, no de la base por
+  pedido. El uso de la app lo habilita un admin (apagado por defecto): sin eso la web no ofrece
+  "Conectar app móvil" y la app se niega a vincularse.
 - **Una sola instancia del backend.** Varias instancias, además de romper los eventos en tiempo
   real, multiplican los límites de rate limiting, que viven en memoria.
 - **Almacenamiento S3.** Restringir el CORS del bucket al origen del frontend y no dar acceso
@@ -99,6 +107,36 @@ servicio no puede suscribirse hasta que se agregue su dominio en
 `backend/src/modules/push/push-endpoint.ts`. La notificación lleva el texto del mensaje: se borran
 las suscripciones de una cuenta al desactivarla o al restablecer su contraseña, y el frontend da de
 baja la del navegador al cerrar sesión.
+
+La app móvil usa otro canal: el servicio push de Expo (`https://exp.host/--/api/v2/push/send`, un
+host fijo en el código, así que no hay riesgo de SSRF). Ese aviso pasa **en claro** por Expo,
+Google y Apple, por eso es genérico ("Tienes un mensaje nuevo" y el id de la conversación): nunca
+lleva el texto del mensaje, el nombre de quien escribe ni el del grupo. El contenido lo trae la app
+ya autenticada. Los dispositivos se borran al cerrar las sesiones de la cuenta, al desactivarla y
+cuando Expo informa que el token ya no vale. Una organización que no quiera que ni siquiera un aviso
+genérico pase por esos servicios puede apagarlo con `MOBILE_PUSH_ENABLED=false`.
+
+### Llamadas: servidores TURN
+
+Las llamadas viajan por WebRTC entre los dos participantes; el servidor solo hace de señalización.
+Para que conecten en datos móviles hace falta un servidor TURN, que **retransmite** el audio y el
+video (cifrados con DTLS-SRTP: el TURN no los puede leer, pero sí ve quién habla con quién y
+cuánto). LINK entrega a cada cuenta con sesión credenciales TURN **temporales** (por defecto 1
+hora, `TURN_SHARED_SECRET`), así una credencial filtrada deja de servir sola. Configura coturn con
+`denied-peer-ip` para las redes internas: un TURN abierto puede usarse como puente hacia ellas.
+Ver `backend/src/modules/calls/README.md`.
+
+### Vinculación de apps móviles
+
+El diálogo "Conectar app móvil" de la web muestra la dirección de la instalación y un QR con
+`linkapp://connect?url=<dirección del sitio>`. Ese enlace solo dice a qué instalación conectarse:
+no lleva credenciales, tokens ni nada de la sesión de quien lo abre, así que compartirlo (o una
+foto del QR) no da acceso a nada. Quien lo recibe igual tiene que iniciar sesión con su cuenta.
+
+Una app móvil solo debería conectarse por HTTPS: el diálogo avisa cuando la dirección desde la que
+se abrió la web no lo usa. Un cliente nativo no manda la cabecera `Origin`, así que `CORS_ORIGIN` no
+lo limita ni hace falta agregarle nada: CORS es una protección del navegador, y el acceso al API lo
+decide el token de sesión.
 
 ## Limitaciones conocidas
 

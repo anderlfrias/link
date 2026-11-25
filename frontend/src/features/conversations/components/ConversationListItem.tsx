@@ -32,6 +32,7 @@ interface ConversationListItemProps {
   onTogglePin: (conversationId: string, next: boolean) => void;
   onToggleFavorite: (conversationId: string, next: boolean) => void;
   onRequestDeleteChat: (conversationId: string) => void;
+  onRequestClearChat: (conversationId: string) => void;
   onRequestDeleteGroup: (conversationId: string) => void;
   onRequestLeaveGroup: (conversationId: string) => void;
   isSelectionMode?: boolean;
@@ -50,6 +51,7 @@ export function ConversationListItem({
   onTogglePin,
   onToggleFavorite,
   onRequestDeleteChat,
+  onRequestClearChat,
   onRequestDeleteGroup,
   onRequestLeaveGroup,
   isSelectionMode = false,
@@ -65,6 +67,7 @@ export function ConversationListItem({
   // de grupo por cada fila de la lista. Un 403 se muestra como error en el
   // modal de confirmación.
   const canDeleteChat = !isGroup && Boolean(publicSettings?.allowConversationDelete);
+  const canClearChat = Boolean(publicSettings?.allowConversationDelete);
   const canDeleteGroup = isGroup && Boolean(publicSettings?.allowGroupDelete);
   const pathname = usePathname();
   const isActive = pathname === `/conversations/${conversation.id}`;
@@ -186,6 +189,7 @@ export function ConversationListItem({
         onToggleFavorite={() => onToggleFavorite(conversation.id, !conversation.isFavoritedByMe)}
         onSelect={onEnterSelectionMode ? () => onEnterSelectionMode(conversation.id) : undefined}
         onDeleteChat={canDeleteChat ? () => onRequestDeleteChat(conversation.id) : undefined}
+        onClearChat={canClearChat ? () => onRequestClearChat(conversation.id) : undefined}
         onDeleteGroup={canDeleteGroup ? () => onRequestDeleteGroup(conversation.id) : undefined}
         onLeaveGroup={isGroup ? () => onRequestLeaveGroup(conversation.id) : undefined}
       />

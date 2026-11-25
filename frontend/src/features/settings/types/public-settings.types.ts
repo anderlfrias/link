@@ -23,4 +23,9 @@ export interface PublicAppSettings {
   /** Muestra/oculta el botón de GIFs/stickers en el composer — la autoridad
    * real sigue siendo el backend (/v1/giphy/*, 403 si está en false). */
   allowStickersAndGifs: boolean;
+  /** Si un admin habilitó el uso de la app móvil. Si es `false`, la web ni siquiera ofrece
+   * "Conectar app móvil". */
+  allowMobileApp: boolean;
+  /** El nombre de la organización que escribió un admin (lo que la app muestra al vincularse), o `null`. */
+  organizationName: string | null;
 }

@@ -39,6 +39,12 @@ import { uploadFile } from "@/features/files/api/files.api";
 import { formatDuration } from "@/utils/format-duration";
 import { buildMessagePreview } from "@/utils/message-preview";
 import { extractFilesFromClipboard } from "@/utils/clipboard";
+import {
+  MAX_MESSAGE_LENGTH,
+  MAX_MESSAGE_PARTS,
+  MAX_TOTAL_LENGTH,
+  splitLongMessage,
+} from "@/features/messages/utils/split-long-message";
 import { getActiveMentionQuery, type ActiveMentionQuery } from "@/utils/mention";
 import { clearDraft, getDraft, setDraft } from "@/features/messages/lib/draft-store";
 import { useTranslation } from "@/i18n";
@@ -48,7 +54,14 @@ import type { ContactMessagePayload, CreatePollPayload, Message } from "@/featur
 
 interface MessageInputProps {
   conversationId: string;
-  onSend: (content: string, fileIds?: string[], type?: "STICKER" | "CONTACT") => Promise<void> | void;
+  /** `isContinuation` = parte 2, 3... de un texto largo dividido: el padre no le vuelve a colgar
+   * la respuesta (`replyTo`), que va solo en el primer mensaje. */
+  onSend: (
+    content: string,
+    fileIds?: string[],
+    type?: "STICKER" | "CONTACT",
+    isContinuation?: boolean,
+  ) => Promise<void> | void;
   onTyping: () => void;
   onStopTyping: () => void;
   attachmentsState: ReturnType<typeof useMessageAttachments>;
@@ -92,8 +105,7 @@ const ATTACHMENT_OPTIONS: AttachmentOption[] = [
 // el cálculo de `scrollHeight` de acá abajo no lee ese valor del CSS.
 const TEXTAREA_MAX_HEIGHT_PX = 128;
 
-/** Límite máximo de caracteres por mensaje soportado por la aplicación y el backend. */
-export const MAX_MESSAGE_LENGTH = 4000;
+export { MAX_MESSAGE_LENGTH };
 
 export function MessageInput({
   conversationId,
@@ -304,22 +316,27 @@ export function MessageInput({
 
   // §8.3: canSend deja de mirar isUploading global.
   // Permite enviar texto mientras los adjuntos suben, o enviar cuando al menos un adjunto está listo.
-  const isOverLimit = value.trim().length > MAX_MESSAGE_LENGTH;
+  // Un texto de más de MAX_MESSAGE_LENGTH se divide solo al enviar, en hasta MAX_MESSAGE_PARTS mensajes.
+  const trimmedLength = value.trim().length;
+  const isOverLimit = trimmedLength > MAX_TOTAL_LENGTH;
+  const messageParts = Math.ceil(trimmedLength / MAX_MESSAGE_LENGTH);
   const showCharCounter = value.length >= 3500;
+  const limitMessage = `El mensaje excede el límite máximo de ${MAX_TOTAL_LENGTH} caracteres (${MAX_MESSAGE_PARTS} mensajes).`;
   const canSend = (Boolean(value.trim()) || fileIds.length > 0) && !sending && !isOverLimit;
 
   async function submit() {
     if (!canSend) {
       if (isOverLimit) {
-        setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+        setSendError(limitMessage);
       }
       return;
     }
     const content = value.trim();
-    if (content.length > MAX_MESSAGE_LENGTH) {
-      setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+    if (content.length > MAX_TOTAL_LENGTH) {
+      setSendError(limitMessage);
       return;
     }
+    const parts = splitLongMessage(content);
     setSendError(null);
     const readyFileIds = [...fileIds];
     setSending(true);
@@ -328,15 +345,26 @@ export function MessageInput({
     setMentionQuery(null);
     setCursorPosition(0);
     onStopTyping();
+    // Cuántas partes ya salieron: si una falla, solo se devuelve al composer lo que NO se envió.
+    let sentParts = 0;
     try {
-      await onSend(content, readyFileIds.length > 0 ? readyFileIds : undefined);
+      for (const part of parts) {
+        // Los adjuntos (y la respuesta) van con el primer mensaje.
+        if (sentParts === 0) {
+          await onSend(part, readyFileIds.length > 0 ? readyFileIds : undefined);
+        } else {
+          await onSend(part, undefined, undefined, true);
+        }
+        sentParts += 1;
+      }
       if (readyFileIds.length > 0) {
         removeSentAttachments(readyFileIds);
       } else if (attachments.length === 0) {
         resetAttachments();
       }
     } catch (err) {
-      updateValueAndDraft(content);
+      if (sentParts > 0 && readyFileIds.length > 0) removeSentAttachments(readyFileIds);
+      updateValueAndDraft(parts.slice(sentParts).join(""));
       const msg = err instanceof Error ? err.message : "No se pudo enviar el mensaje. Verificá tu conexión.";
       setSendError(msg);
     } finally {
@@ -379,7 +407,7 @@ export function MessageInput({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (isOverLimit) {
-        setSendError(`El mensaje excede el límite máximo de ${MAX_MESSAGE_LENGTH} caracteres.`);
+        setSendError(limitMessage);
         return;
       }
       void submit();
@@ -557,7 +585,8 @@ export function MessageInput({
           )}
           aria-live="polite"
         >
-          {value.length} / {MAX_MESSAGE_LENGTH}
+          {value.length} / {value.length > MAX_MESSAGE_LENGTH ? MAX_TOTAL_LENGTH : MAX_MESSAGE_LENGTH}
+          {!isOverLimit && messageParts > 1 && ` · se enviará en ${messageParts} mensajes`}
         </div>
       )}
       {recorder.status === "recording" ? (
@@ -725,8 +754,8 @@ export function MessageInput({
       <CameraCaptureModal
         open={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onCapture={(file) => {
-          addFiles([file]);
+        onCapture={(files) => {
+          addFiles(files);
         }}
       />
 

@@ -8,6 +8,7 @@ import {
   addMembers,
   removeMember,
   deleteConversation,
+  clearConversation,
   setMemberAdmin,
   getConversationSettings,
   updateConversationSettings,
@@ -168,6 +169,16 @@ describe("conversations.api", () => {
       method: "POST",
       token: "tok-1",
       body: { lastReadMessageId: "msg-123" },
+    });
+  });
+
+  it("clearConversation sends POST to /v1/conversations/:id/clear", async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ conversationId: "c-1" });
+
+    await clearConversation("tok-1", "c-1");
+    expect(apiRequest).toHaveBeenCalledWith("/v1/conversations/c-1/clear", {
+      method: "POST",
+      token: "tok-1",
     });
   });
 });

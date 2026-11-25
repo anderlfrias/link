@@ -25,7 +25,7 @@ Todo lo demás (adjuntos, recibos, "escribiendo...", editar/borrar, grupos) se a
 
 ### Autenticación HTTP
 
-Todas las rutas salvo `POST /api/v1/auth/login` y `GET /api/v1/auth/config` requieren:
+Todas las rutas salvo `POST /api/v1/auth/login`, `GET /api/v1/auth/config` y `GET /api/v1/instance` (sección 17) requieren:
 
 ```
 Authorization: Bearer <token>
@@ -408,9 +408,15 @@ Solo `GROUP`. Ids que ya son miembros se ignoran en silencio; si no queda ningú
 Comportamiento distinto según el tipo:
 
 - **`GROUP`** ("Eliminar grupo"): borrado lógico para todos los miembros. Requiere `AppSettings.allowGroupDelete: true` (interruptor maestro, `403` si está en `false` — sin excepción, ni un admin de la app puede saltearlo) y, además, `AppSettings.whoCanDeleteGroup` (ver 4.8). Emite `conversation:deleted` a la room **y** `conversation:updated` a la room personal de cada miembro.
-- **`PRIVATE`** ("Eliminar chat"): borrado **"para mí"** — oculta la conversación solo para quien la pide (`ConversationMember.hiddenAt`), sin afectar al otro participante ni su historial. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`). Reaparece sola en la lista de quien la ocultó si el otro miembro le escribe de nuevo, o si el propio usuario reinicia el chat con ese contacto (`POST /` reusando la conversación existente). Emite `conversation:deleted` **solo** a la room personal de quien la eliminó.
+- **`PRIVATE`** y **`SELF`** ("Eliminar chat"): borrado **"para mí"** — oculta la conversación **y vacía su historial** solo para quien la pide (`ConversationMember.hiddenAt` y `clearedAt`; si reaparece, arranca vacía), sin afectar al otro participante ni su historial. Cualquier miembro puede hacerlo (ya no hay distinción de creador). Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`). Reaparece sola en la lista de quien la ocultó si el otro miembro le escribe de nuevo, o si el propio usuario reinicia el chat con ese contacto (`POST /` reusando la conversación existente). Emite `conversation:deleted` **solo** a la room personal de quien la eliminó.
 
 → `200` `{ "conversationId": "..." }` en ambos casos.
+
+### 4.7.1 `POST /:id/clear` — Vaciar chat
+
+Elimina el historial **solo para quien lo pide** (`ConversationMember.clearedAt`): el resto de los miembros conserva sus mensajes y la conversación sigue en la lista, vacía. Cualquier tipo de conversación (`PRIVATE`, `SELF`, `GROUP`). Los mensajes anteriores al vaciado dejan de verse en `GET /:id/messages` (y su búsqueda), `GET /:id/files`, `unreadCount` y `lastMessagePreview`. Requiere `AppSettings.allowConversationDelete: true` (`403` si está en `false`).
+
+→ `200` `{ "conversationId": "..." }`. Emite `conversation:cleared` **solo** a la room personal de quien lo pidió (todas sus pestañas y dispositivos), con `{ conversationId }`.
 
 ### 4.8 Quién puede hacer qué
 
@@ -1019,7 +1025,7 @@ Requieren rol `"admin"` en `roles` (ver sección 2) — `403` si no lo tenés. `
 }
 ```
 
-`PATCH` acepta cualquier subconjunto de esos campos (al menos uno) y devuelve el objeto completo actualizado. `localSessionTtlHours` (1 a 720) es la duración de la sesión de LINK, con cualquier proveedor de autenticación (el nombre es histórico), y bajarla corta también las sesiones abiertas que la superan. Las contraseñas solo aplican con cuentas locales: con un proveedor externo, los campos de la política (`passwordMinLength`, `passwordRequire*`, `passwordExpirationDays`, `passwordHistoryCount`, `maxFailedLoginAttempts` y `lockoutDurationMinutes`) se rechazan con `400` y `code: "local_auth_setting_not_applicable"`, con la lista en `fields`. `passwordMinLength` (8 a 128; el piso de 8 no se puede bajar) y los cuatro `passwordRequire*` son la política de contraseñas, que se aplica en el próximo login de cada cuenta. `passwordExpirationDays` (1 a 365, `null` = no vencen), `passwordHistoryCount` (0 a 12, contando la actual), `maxFailedLoginAttempts` (3 a 50, `null` = sin bloqueo) y `lockoutDurationMinutes` (1 a 1440) completan la política, todos apagados por defecto. `maxFilesPerMessage` (default `10`, a diferencia del resto de los límites de esta sección) acota cuántos `fileIds` puede traer un `POST /conversations/:id/messages` (ver 6.1) — `null` lo deshabilita (sin límite). `messageRetentionDays: null` (default) deshabilita el borrado automático de mensajes — un número de días lo activa. Los `allowGroupOverride*` (default `false` los 5) habilitan que cada `GROUP` fije su propio valor para la dimensión correspondiente, vía `PATCH /conversations/:id/settings` (ver 4.9) — ver [`settings/README.md`](./src/modules/settings/README.md). `allowMessageEdit`/`allowMessageDeleteForEveryone` (default `true`) habilitan que el propio autor edite/borre-para-todos sus mensajes; `messageEditTimeLimitMinutes`/`messageDeleteForEveryoneTimeLimitMinutes` (default `null` = sin límite) acotan esa ventana a N minutos desde el envío — hechas cumplir por `PATCH`/`DELETE /conversations/:id/messages/:id` (ver 6.3/6.5), nunca por el creador de la conversación borrando un mensaje ajeno (eso es moderación, ver [`messages/README.md`](./src/modules/messages/README.md)). `allowConversationDelete`/`allowGroupDelete` (default `true`) habilitan "Eliminar chat" (`PRIVATE`, "para mí") y "Eliminar grupo" (`GROUP`, para todos) respectivamente — ver 4.7; `allowGroupDelete` es el interruptor maestro que se chequea antes de `whoCanDeleteGroup`. `allowStickersAndGifs` (default `true`) es el interruptor maestro del buscador de GIFs/stickers (sección 6.1.2) — `403` en `/v1/giphy/*` si está en `false`, sin importar si `GIPHY_API_KEY` está configurada.
+`PATCH` acepta cualquier subconjunto de esos campos (al menos uno) y devuelve el objeto completo actualizado. `localSessionTtlHours` (1 a 720) es la duración de la sesión de LINK, con cualquier proveedor de autenticación (el nombre es histórico), y bajarla corta también las sesiones abiertas que la superan. Las contraseñas solo aplican con cuentas locales: con un proveedor externo, los campos de la política (`passwordMinLength`, `passwordRequire*`, `passwordExpirationDays`, `passwordHistoryCount`, `maxFailedLoginAttempts` y `lockoutDurationMinutes`) se rechazan con `400` y `code: "local_auth_setting_not_applicable"`, con la lista en `fields`. `passwordMinLength` (8 a 128; el piso de 8 no se puede bajar) y los cuatro `passwordRequire*` son la política de contraseñas, que se aplica en el próximo login de cada cuenta. `passwordExpirationDays` (1 a 365, `null` = no vencen), `passwordHistoryCount` (0 a 12, contando la actual), `maxFailedLoginAttempts` (3 a 50, `null` = sin bloqueo) y `lockoutDurationMinutes` (1 a 1440) completan la política, todos apagados por defecto. `maxFilesPerMessage` (default `10`, a diferencia del resto de los límites de esta sección) acota cuántos `fileIds` puede traer un `POST /conversations/:id/messages` (ver 6.1) — `null` lo deshabilita (sin límite). `messageRetentionDays: null` (default) deshabilita el borrado automático de mensajes — un número de días lo activa. Los `allowGroupOverride*` (default `false` los 5) habilitan que cada `GROUP` fije su propio valor para la dimensión correspondiente, vía `PATCH /conversations/:id/settings` (ver 4.9) — ver [`settings/README.md`](./src/modules/settings/README.md). `allowMessageEdit`/`allowMessageDeleteForEveryone` (default `true`) habilitan que el propio autor edite/borre-para-todos sus mensajes; `messageEditTimeLimitMinutes`/`messageDeleteForEveryoneTimeLimitMinutes` (default `null` = sin límite) acotan esa ventana a N minutos desde el envío — hechas cumplir por `PATCH`/`DELETE /conversations/:id/messages/:id` (ver 6.3/6.5), nunca por el creador de la conversación borrando un mensaje ajeno (eso es moderación, ver [`messages/README.md`](./src/modules/messages/README.md)). `allowConversationDelete`/`allowGroupDelete` (default `true`) habilitan "Eliminar chat" (`PRIVATE`, "para mí") y "Eliminar grupo" (`GROUP`, para todos) respectivamente — ver 4.7; `allowGroupDelete` es el interruptor maestro que se chequea antes de `whoCanDeleteGroup`. `allowStickersAndGifs` (default `true`) es el interruptor maestro del buscador de GIFs/stickers (sección 6.1.2) — `403` en `/v1/giphy/*` si está en `false`, sin importar si `GIPHY_API_KEY` está configurada. `allowMobileApp` (default `false`: solo un admin lo habilita) es si la organización acepta el uso de la app móvil: apagado, la web no ofrece "Conectar app móvil" y `GET /api/v1/instance` informa `features.mobileApp: false`, con lo que la app se niega a vincularse (sección 17). `organizationName` (texto de hasta 80 caracteres, sin caracteres de control, con los espacios recortados; `null` o vacío lo borra) es el nombre que ve quien vincula la app. **Es público**: lo devuelve `GET /api/v1/instance` sin autenticación.
 
 ### 12.2 `GET /settings/public` — cualquier autenticado
 
@@ -1038,9 +1044,13 @@ Subconjunto de solo lectura, sin requerir rol admin — lo que un cliente necesi
   "messageDeleteForEveryoneTimeLimitMinutes": null,
   "allowConversationDelete": true,
   "allowGroupDelete": true,
-  "allowStickersAndGifs": true
+  "allowStickersAndGifs": true,
+  "allowMobileApp": false,
+  "organizationName": null
 }
 ```
+
+`allowMobileApp` dice si un admin habilitó el uso de la app móvil: con `false` la web ni siquiera ofrece "Conectar app móvil". `organizationName` es el nombre que un admin escribió para la organización (`null` si no hay).
 
 `maxUploadSizeMb` es el máximo **efectivo** de un archivo, no necesariamente el configurado en 12.1: con almacenamiento S3 (`STORAGE_WRITE_PROVIDER=S3`) es el configurado, y sin S3 es como mucho **32 MB** (el techo del camino directo, `POST /api/v1/files`), porque la subida por partes (sección 10) solo existe con S3. `chunkedUploads` dice si esa subida por partes está disponible: con `false`, un cliente tiene que mandar todo archivo por el camino directo (y `POST /api/v1/uploads` responde `503` con `code: "chunked_uploads_unavailable"`). El valor configurado, sin ajustar, sigue en `GET /admin/settings`.
 
@@ -1190,3 +1200,75 @@ Base HTTP: `/api/v1/push`. Requiere sesión. Las notificaciones llegan aunque la
 - `POST /unsubscribe` — `{ "endpoint": "..." }` → `204`. Solo borra una suscripción de la cuenta que pide la baja; si no es suya o no existe, no hace nada.
 
 Las suscripciones se borran solas cuando el servicio push responde 404/410, cuando el endpoint no pasa la allowlist, y cuando se cierran las sesiones de la cuenta (se desactiva, o se cambia o restablece su contraseña). Una cuenta desactivada no recibe notificaciones. El frontend da de baja la suscripción del navegador al cerrar sesión.
+
+### 16.1 Notificaciones push para la app móvil
+
+Mismo prefijo (`/api/v1/push`) y misma sesión, pero otro canal: el servicio push de Expo (reparte a FCM y APNs). **A diferencia de Web Push, el aviso pasa en claro por Expo, Google y Apple, así que es genérico**: no lleva el texto del mensaje, ni quién lo escribe, ni el nombre del grupo. La app, ya autenticada, trae el contenido desde este servidor.
+
+- `POST /devices` — `{ "token": "ExponentPushToken[...]", "platform": "ios" | "android" }` → `204`. Registra el dispositivo en la cuenta; si otra cuenta había iniciado sesión en ese teléfono, el dispositivo pasa a la nueva. Una cuenta guarda hasta 10 dispositivos (se descartan los más viejos).
+  - `400` si el token no tiene la forma de un token de Expo o falta `platform`.
+  - `404` con `code: "mobile_push_disabled"` si el administrador apagó las notificaciones móviles (`MOBILE_PUSH_ENABLED=false`, también visible en `GET /api/v1/instance`).
+- `DELETE /devices` — `{ "token": "..." }` → `204`. Solo borra un dispositivo de la propia cuenta; si no es suyo o no existe, no hace nada. Funciona aunque las notificaciones móviles estén apagadas (para limpiar lo que quedó).
+- Rate limit: `429` tras 30 solicitudes en 15 minutos por cuenta.
+
+Lo que Expo entrega al teléfono, por cada mensaje nuevo para alguien que no tiene esa conversación abierta:
+
+```json
+{ "title": "LINK", "body": "Tienes un mensaje nuevo", "data": { "type": "message", "conversationId": "<id>" },
+  "sound": "default", "channelId": "messages" }
+```
+
+`body` sale en el idioma de la cuenta (`es` o `en`) y `sound` es `null` si la cuenta apagó el sonido. Los dispositivos se borran solos cuando Expo responde `DeviceNotRegistered`, cuando se cierran las sesiones de la cuenta (se desactiva, o se cambia o restablece su contraseña) y cuando la app los da de baja al cerrar sesión. Una cuenta desactivada no recibe nada.
+
+---
+
+### 16.2 Servidores ICE de las llamadas
+
+`GET /api/v1/calls/ice-servers` (requiere sesión) → `200`:
+
+```json
+{
+  "iceServers": [
+    { "urls": ["stun:stun.l.google.com:19302"] },
+    { "urls": ["turn:turn.empresa.com:3478?transport=udp"], "username": "1762857600:<userId>", "credential": "<base64>" }
+  ],
+  "ttlSeconds": 3600
+}
+```
+
+Los clientes (web y app móvil) los piden al iniciar o contestar una llamada y arman con ellos su `RTCPeerConnection`; si no se pueden pedir, usan los STUN públicos de siempre. Sin configurar nada, la respuesta son esos mismos STUN y no hay TURN. Con `TURN_URLS` y `TURN_SHARED_SECRET` (coturn `use-auth-secret`) las credenciales son **temporales y por usuario** (`ttlSeconds`, `TURN_CREDENTIAL_TTL_SECONDS`, 1 hora por defecto); con `TURN_USERNAME` y `TURN_PASSWORD`, una credencial fija. El secreto compartido nunca viaja en la respuesta. Solo se aceptan URLs `stun:`, `stuns:`, `turn:` y `turns:`. Responde con `Cache-Control: no-store`; rate limit: `429` tras 60 solicitudes en 15 minutos por cuenta. Ver [`calls/README.md`](./src/modules/calls/README.md).
+
+---
+
+## 17. Identificación de la instalación (apps móviles)
+
+### `GET /api/v1/instance`
+
+Público, sin token. Le permite a una app que todavía no tiene sesión confirmar que detrás de esta URL hay un LINK y que lo puede usar, antes de pedir credenciales. Ver [`instance/README.md`](./src/modules/instance/README.md).
+
+```json
+{
+  "app": "link",
+  "mobileApi": 1,
+  "organizationName": "Clínica del Sol",
+  "features": { "mobileApp": true, "mobilePush": true }
+}
+```
+
+- `app`: siempre `"link"`.
+- `mobileApi`: nivel de compatibilidad del API para apps móviles. Es un entero propio, **no** la versión del backend: sube solo cuando un cambio rompe a una app ya publicada. La app lo compara con el rango que soporta.
+- `organizationName`: el nombre de la organización que escribió un admin (`AppSettings.organizationName`), o `null`. Es lo que la app muestra al vincularse, en lugar de una dirección técnica. Es público a propósito: un admin lo escribe para que se vea.
+- `features.mobileApp`: si la organización acepta el uso de la app móvil (`AppSettings.allowMobileApp`, apagado por defecto). Con `false`, la app se niega a vincularse. No bloquea el inicio de sesión de un cliente ya vinculado: controla la vinculación y la opción de la web.
+- `features.mobilePush`: si esta instalación envía notificaciones push a apps móviles (`MOBILE_PUSH_ENABLED`, activo por defecto; ver sección 16.1).
+
+No devuelve la versión del backend ni datos de sus cuentas; el nombre de la organización sí, porque un admin lo escribió para mostrarse. Responde con `Cache-Control: no-store`. Rate limit: `429` tras 120 solicitudes en 15 minutos desde la misma IP.
+
+### Cómo llega una app hasta acá
+
+LINK es auto-hospedado, así que una app no conoce de antemano la dirección del API. El recorrido es:
+
+1. La persona le da a la app la **URL del sitio web** (escrita, o con el QR del diálogo "Conectar app móvil" de la web, que lleva `linkapp://connect?url=<URL del sitio>`).
+2. La app pide `GET <URL del sitio>/.well-known/link-app.json`, que sirve el frontend: `{ "app": "link", "v": 1, "apiUrl": "https://…/api", "socketUrl": "https://…" }` (los mismos valores de `NEXT_PUBLIC_API_URL` y `NEXT_PUBLIC_SOCKET_URL`).
+3. La app pide `GET <apiUrl>/v1/instance` y, si todo coincide, sigue con `GET /v1/auth/config` y `POST /v1/auth/login` (sección 2).
+
+Un cliente nativo no manda la cabecera `Origin`, así que `CORS_ORIGIN` no lo afecta: CORS lo aplica el navegador y no es un control de acceso del servidor (ver `backend/src/native-client-cors.test.ts`).

@@ -177,12 +177,20 @@ export function useMessages(conversationId: string) {
       );
     }
 
+    // "Vaciar chat" (desde esta pestaña, otra o el celular): para mí no queda nada del historial.
+    function handleCleared(payload: { conversationId: string }) {
+      if (payload.conversationId !== conversationId) return;
+      setMessages([]);
+      setHasMore(false);
+    }
+
     socket.on(SOCKET_EVENTS.message.created, handleCreated);
     socket.on(SOCKET_EVENTS.message.updated, handleUpdated);
     socket.on(SOCKET_EVENTS.message.deleted, handleDeleted);
     socket.on(SOCKET_EVENTS.message.reactionUpdated, handleReactionUpdated);
     socket.on(SOCKET_EVENTS.message.pollVoted, handlePollVoted);
     socket.on(SOCKET_EVENTS.conversation.receiptUpdated, handleReceiptUpdated);
+    socket.on(SOCKET_EVENTS.conversation.cleared, handleCleared);
     return () => {
       socket.off(SOCKET_EVENTS.message.created, handleCreated);
       socket.off(SOCKET_EVENTS.message.updated, handleUpdated);
@@ -190,6 +198,7 @@ export function useMessages(conversationId: string) {
       socket.off(SOCKET_EVENTS.message.reactionUpdated, handleReactionUpdated);
       socket.off(SOCKET_EVENTS.message.pollVoted, handlePollVoted);
       socket.off(SOCKET_EVENTS.conversation.receiptUpdated, handleReceiptUpdated);
+      socket.off(SOCKET_EVENTS.conversation.cleared, handleCleared);
     };
   }, [socket, conversationId, token]);
 

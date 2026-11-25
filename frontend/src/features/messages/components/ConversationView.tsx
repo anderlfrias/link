@@ -240,8 +240,14 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
   // El propio `send` no sabe nada de "a qué estoy respondiendo" — ese estado
   // es puramente de esta pantalla (qué está armado en el composer ahora
   // mismo), por eso se resuelve acá y no en use-messages.ts.
-  async function handleSend(content: string, fileIds?: string[], type?: "STICKER" | "CONTACT") {
-    await send(content, fileIds, replyTarget?.id, type);
+  async function handleSend(
+    content: string,
+    fileIds?: string[],
+    type?: "STICKER" | "CONTACT",
+    isContinuation = false,
+  ) {
+    // Las partes 2, 3... de un texto largo dividido no repiten la respuesta.
+    await send(content, fileIds, isContinuation ? undefined : replyTarget?.id, type);
     setReplyTarget(null);
   }
 

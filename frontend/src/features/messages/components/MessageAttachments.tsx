@@ -1,12 +1,18 @@
 "use client";
 
-import { IconDownload, IconFileOff } from "@tabler/icons-react";
+import { IconDownload, IconFileOff, IconPlayerPlayFilled } from "@tabler/icons-react";
 import { FileTypeIcon } from "@/features/files/components/FileTypeIcon";
 import { VoiceNotePlayer } from "@/features/messages/components/VoiceNotePlayer";
-import { useImageLightbox } from "@/features/messages/providers/image-lightbox-provider";
+import { useImageLightbox, type LightboxItem } from "@/features/messages/providers/image-lightbox-provider";
 import { resolveFileUrl } from "@/utils/file-url";
 import { downloadFile } from "@/utils/download-file";
-import { formatFileName, formatFileSize, isAudioMimeType, isImageMimeType } from "@/utils/file-format";
+import {
+  formatFileName,
+  formatFileSize,
+  isAudioMimeType,
+  isImageMimeType,
+  isVideoMimeType,
+} from "@/utils/file-format";
 import { cn } from "@/utils/cn";
 import type { MessageFile } from "@/features/messages/types/message.types";
 
@@ -15,15 +21,92 @@ interface MessageAttachmentsProps {
   isOwn: boolean;
 }
 
-/** Adjuntos de un mensaje ya enviado: imágenes en línea, el resto como tarjeta descargable. */
+/** Con más de 3 fotos/videos en el mismo mensaje se agrupan en una cuadrícula (como WhatsApp/Telegram). */
+const MIN_GROUPED_MEDIA = 4;
+/** Cuántas miniaturas muestra la cuadrícula: la última lleva "+N" si hay más. */
+const MAX_GRID_TILES = 4;
+
+/** Cuadrícula de fotos y videos enviados juntos. Tocar una miniatura abre el visor sobre todo el
+ * grupo, para pasar de una a otra (incluidas las que la cuadrícula no muestra). */
+function MediaGrid({ files }: { files: MessageFile[] }) {
+  const { open: openLightbox } = useImageLightbox();
+  const album: LightboxItem[] = files.map(({ file }) => ({
+    url: resolveFileUrl(file),
+    name: formatFileName(file.originalName),
+    kind: isVideoMimeType(file.mimeType) ? "video" : "image",
+  }));
+  const visible = album.slice(0, MAX_GRID_TILES);
+  const hiddenCount = album.length - visible.length;
+
+  return (
+    <div
+      role="group"
+      aria-label={`${album.length} fotos y videos`}
+      className="grid w-full grid-cols-2 gap-0.5 overflow-hidden rounded-lg"
+    >
+      {visible.map((item, index) => {
+        const isOverflowTile = hiddenCount > 0 && index === visible.length - 1;
+        const isVideo = item.kind === "video";
+        const label = isOverflowTile
+          ? `Ver ${item.name} y ${hiddenCount} más`
+          : `${isVideo ? "Ver video" : "Ver imagen"} ${item.name}`;
+        return (
+          <button
+            key={item.url}
+            type="button"
+            onClick={() => openLightbox(item, album)}
+            aria-label={label}
+            className="relative aspect-square cursor-pointer overflow-hidden border-0 bg-black/10 p-0 dark:bg-white/10"
+          >
+            {isVideo ? (
+              // `#t=0.001` hace que el navegador (iOS incluido) muestre el primer cuadro como miniatura.
+              <video
+                src={`${item.url}#t=0.001`}
+                preload="metadata"
+                muted
+                playsInline
+                aria-hidden="true"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={item.url} alt="" loading="eager" className="h-full w-full object-cover" />
+            )}
+            {isVideo && !isOverflowTile && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white">
+                  <IconPlayerPlayFilled size={18} />
+                </span>
+              </span>
+            )}
+            {isOverflowTile && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-2xl font-semibold text-white">
+                +{hiddenCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Adjuntos de un mensaje ya enviado: imágenes en línea (en cuadrícula si son más de 3 fotos/videos), el resto como tarjeta descargable. */
 export function MessageAttachments({ files, isOwn }: MessageAttachmentsProps) {
   const { open: openLightbox } = useImageLightbox();
 
   if (files.length === 0) return null;
 
+  const media = files.filter(
+    ({ file }) => !file.deletedAt && (isImageMimeType(file.mimeType) || isVideoMimeType(file.mimeType)),
+  );
+  const grouped = media.length >= MIN_GROUPED_MEDIA;
+  const groupedIds = new Set(grouped ? media.map((entry) => entry.id) : []);
+
   return (
     <div className="flex w-full max-w-full min-w-0 flex-col gap-1.5">
-      {files.map(({ id, file }) => {
+      {grouped && <MediaGrid files={media} />}
+      {files.filter((entry) => !groupedIds.has(entry.id)).map(({ id, file }) => {
         const displayName = formatFileName(file.originalName);
 
         // El archivo fue borrado físicamente desde el panel de admin — nunca

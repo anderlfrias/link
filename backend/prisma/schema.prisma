@@ -246,6 +246,7 @@ model User {
   uploadedFiles           StoredFile[]         @relation("StoredFileCreatedBy")
   fileUploads             FileUpload[]         @relation("FileUploadCreatedBy")
   pushSubscriptions       PushSubscription[]
+  mobilePushDevices       MobilePushDevice[]
   reactions               MessageReaction[]
   pollVotes               PollVote[]
   callsInitiated          Call[]               @relation("CallCaller")
@@ -372,6 +373,14 @@ model ConversationMember {
   /// contacto (ver createConversation) — así el chat "reaparece" sin
   /// duplicar nunca la fila de Conversation/ConversationMember.
   hiddenAt DateTime? @map("hidden_at")
+
+  /// "Vaciar chat" (y "Eliminar chat") SOLO para este miembro: los mensajes
+  /// con `createdAt <= clearedAt` no se le muestran más (ni en el historial, ni
+  /// en la búsqueda, ni en archivos, ni en el contador de no leídos), pero siguen
+  /// existiendo para el resto de los miembros — por eso es una marca de tiempo
+  /// por miembro y no un borrado de filas de `Message`. Aplica a cualquier tipo
+  /// de conversación (PRIVATE, SELF y GROUP).
+  clearedAt DateTime? @map("cleared_at")
 
   /// Un usuario solo puede tener una membresía por conversación.
   @@unique([conversationId, userId])
@@ -722,6 +731,16 @@ model AppSettings {
   /// apague; igual requiere GIPHY_API_KEY configurada para funcionar de verdad.
   allowStickersAndGifs Boolean @default(true) @map("allow_stickers_and_gifs")
 
+  /// Si la organización acepta el uso de la app móvil. Default false: solo un admin
+  /// lo habilita. Apagado, la web ni siquiera ofrece "Conectar app móvil" y
+  /// `GET /v1/instance` informa `features.mobileApp: false`, con lo que la app se
+  /// niega a vincularse (ver modules/instance/README.md).
+  allowMobileApp Boolean @default(false) @map("allow_mobile_app")
+  /// Nombre de la organización que ve la persona al vincular la app (en lugar de una
+  /// dirección técnica). Lo escribe un admin y es PÚBLICO: lo devuelve
+  /// `GET /v1/instance` sin autenticación. null = sin nombre (la app muestra el dominio).
+  organizationName String? @map("organization_name")
+
   // Limpieza y ciclo de vida de archivos y sesiones (ver LARGE_FILES_PLAN.md §5.5, §11 Fase 5).
   // Defaults false/null: nunca borra datos sin que un admin lo configure explícitamente.
   /// Interruptor maestro del worker de limpieza.
@@ -813,6 +832,30 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+/// Dispositivo móvil registrado para recibir notificaciones push de la app de
+/// LINK, a través del servicio push de Expo (ver modules/push/README.md). A
+/// diferencia de `PushSubscription` (Web Push, cifrado de punta a punta), este
+/// canal pasa en claro por Expo/Google/Apple: la notificación que se manda es
+/// genérica, sin texto ni nombres.
+model MobilePushDevice {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Token de Expo (`ExponentPushToken[...]`). Identifica la instalación de la
+  /// app, no a la persona: si otra cuenta inicia sesión en ese teléfono, la
+  /// fila pasa a ella (ver `registerDevice`).
+  token    String @unique
+  /// "ios" | "android". Solo informativo.
+  platform String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("mobile_push_devices")
 }
 
 /// Estado de una sesión de subida chunked. Efímera: se crea al iniciar, muere

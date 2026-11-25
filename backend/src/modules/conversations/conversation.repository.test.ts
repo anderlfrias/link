@@ -44,6 +44,7 @@ import {
   listForUser,
   markDelivered,
   markRead,
+  setMemberCleared,
 } from "./conversation.repository";
 
 describe("conversation.repository", () => {
@@ -119,6 +120,32 @@ describe("conversation.repository", () => {
       expect(prisma.conversationMember.updateMany).toHaveBeenCalledWith({
         where: { conversationId: "c-1", userId: { in: ["u-1"] }, hiddenAt: { not: null } },
         data: { hiddenAt: null },
+      });
+    });
+  });
+
+  describe("setMemberCleared", () => {
+    const clearedAt = new Date("2026-01-01T00:00:00Z");
+
+    it("vaciar sin ocultar solo marca clearedAt", async () => {
+      vi.mocked(prisma.conversationMember.update).mockResolvedValue({} as any);
+
+      await setMemberCleared("c-1", "u-1", clearedAt);
+
+      expect(prisma.conversationMember.update).toHaveBeenCalledWith({
+        where: { conversationId_userId: { conversationId: "c-1", userId: "u-1" } },
+        data: { clearedAt },
+      });
+    });
+
+    it("con hide también oculta la conversación (Eliminar chat)", async () => {
+      vi.mocked(prisma.conversationMember.update).mockResolvedValue({} as any);
+
+      await setMemberCleared("c-1", "u-1", clearedAt, true);
+
+      expect(prisma.conversationMember.update).toHaveBeenCalledWith({
+        where: { conversationId_userId: { conversationId: "c-1", userId: "u-1" } },
+        data: { clearedAt, hiddenAt: clearedAt },
       });
     });
   });

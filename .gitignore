@@ -41,3 +41,9 @@ frontend/coverage/
 # Salida local de graphify (grafo de conocimiento del código): se genera en
 # cada máquina y guarda rutas absolutas locales.
 graphify-out/
+
+.demo-seed/
+
+# Config de PM2 propia de cada entorno (difiere entre local y servidor)
+ecosystem.config.js
+ngrok.yml

@@ -198,14 +198,20 @@ export function MessageBubble({
   // solo click, para no competir visualmente con la vía "real". Doble click
   // en cualquier parte de la FILA (no solo la burbujita — la fila ocupa todo
   // el ancho del hilo, aunque la burbuja sea angosta) selecciona para
-  // responder. Se frena si el click fue sobre un elemento interactivo propio
-  // (el menú "⋮", un adjunto, el editor) o si el usuario estaba
-  // seleccionando texto (un click-and-drag para copiar también dispara esto al soltar).
+  // responder, sea el mensaje propio o ajeno y tenga texto o archivos.
+  // Se frena solo si el click fue sobre un control con acción propia (el menú
+  // "⋮", un adjunto — su click abre/descarga —, el editor) o sobre el TEXTO del
+  // mensaje, donde el doble click del navegador selecciona una palabra para
+  // copiarla. Fuera de ahí NO se mira si hay algo seleccionado: el navegador
+  // selecciona texto cercano al hacer doble click en el espacio vacío de la
+  // fila (distinto según el lado en que quede), y eso no es una intención de
+  // copiar — se limpia la selección para que no quede resaltada.
   function handleRowDoubleClick(event: MouseEvent<HTMLDivElement>) {
     if (!canReply || isEditing) return;
     if (!window.matchMedia("(min-width: 1024px)").matches) return;
-    if ((event.target as HTMLElement).closest("button, a, input, textarea")) return;
-    if (window.getSelection()?.toString()) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, [data-message-text]")) return;
+    window.getSelection()?.removeAllRanges();
     onReply(message);
   }
 
@@ -699,6 +705,7 @@ export function MessageBubble({
               </div>
             ) : hasCaption ? (
               <p
+                data-message-text
                 className={cn(
                   "flow-root whitespace-pre-wrap break-words text-sm",
                   isDeleted && (renderAsOwn ? "italic text-white/70" : "italic text-neutral-500 dark:text-neutral-400"),

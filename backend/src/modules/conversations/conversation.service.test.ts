@@ -47,6 +47,7 @@ import {
   assertMembership,
   buildLastMessagePreview,
   computeReceipts,
+  clearConversation,
   createConversation,
   deleteConversation,
   getOrCreateSelfChat,
@@ -71,6 +72,7 @@ function buildMockMember(overrides: Partial<ConversationMemberWithUser> = {}): C
     isPinned: false,
     isFavorite: false,
     hiddenAt: null,
+    clearedAt: null,
     lastReadAt: null,
     lastReadMessageId: null,
     lastDeliveredAt: null,
@@ -325,7 +327,7 @@ describe("conversation.service", () => {
       expect(ConversationRepository.softDelete).toHaveBeenCalledWith("conv-1");
     });
 
-    it("borrado de PRIVATE oculta la conversación solo para el usuario actual", async () => {
+    it("borrado de PRIVATE oculta Y vacía la conversación solo para el usuario actual", async () => {
       const mockConv = buildMockConversation({
         type: ConversationType.PRIVATE,
         members: [buildMockMember({ userId: "u-1" }), buildMockMember({ userId: "u-2" })],
@@ -338,12 +340,67 @@ describe("conversation.service", () => {
       const result = await deleteConversation("u-1", "conv-1", []);
 
       expect(result).toEqual({ conversationId: "conv-1" });
-      expect(ConversationRepository.setMemberHidden).toHaveBeenCalledWith(
+      // Regresión: antes solo se ocultaba y al reabrir el chat volvía todo el historial.
+      expect(ConversationRepository.setMemberCleared).toHaveBeenCalledWith(
         "conv-1",
         "u-1",
         expect.any(Date),
+        true,
       );
       expect(ConversationRepository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it("borrado de SELF (Mensajes guardados) también vacía el historial", async () => {
+      const mockConv = buildMockConversation({
+        type: ConversationType.SELF,
+        members: [buildMockMember({ userId: "u-1" })],
+      });
+      vi.mocked(ConversationRepository.findActiveById).mockResolvedValue(mockConv);
+      vi.mocked(SettingsService.getSettings).mockResolvedValue({ allowConversationDelete: true } as any);
+
+      await deleteConversation("u-1", "conv-1", []);
+
+      expect(ConversationRepository.setMemberCleared).toHaveBeenCalledWith("conv-1", "u-1", expect.any(Date), true);
+    });
+  });
+
+  describe("clearConversation", () => {
+    it("vacía el chat solo para quien lo pide y avisa a su room personal", async () => {
+      const mockConv = buildMockConversation({
+        type: ConversationType.GROUP,
+        members: [buildMockMember({ userId: "u-1" }), buildMockMember({ userId: "u-2" })],
+      });
+      vi.mocked(ConversationRepository.findActiveById).mockResolvedValue(mockConv);
+      vi.mocked(SettingsService.getSettings).mockResolvedValue({ allowConversationDelete: true } as any);
+
+      const result = await clearConversation("u-1", "conv-1");
+
+      expect(result).toEqual({ conversationId: "conv-1" });
+      // Sin `hide`: la conversación sigue en la lista, vacía.
+      expect(ConversationRepository.setMemberCleared).toHaveBeenCalledWith("conv-1", "u-1", expect.any(Date));
+      expect(mockTo).toHaveBeenCalledWith("user:u-1");
+      expect(mockEmit).toHaveBeenCalledWith(CONVERSATION_EVENTS.CLEARED, { conversationId: "conv-1" });
+    });
+
+    it("rechaza si quien lo pide no es miembro", async () => {
+      vi.mocked(ConversationRepository.findActiveById).mockResolvedValue(
+        buildMockConversation({ members: [buildMockMember({ userId: "u-2" })] }),
+      );
+
+      await expect(clearConversation("u-1", "conv-1")).rejects.toThrow(ForbiddenError);
+      expect(ConversationRepository.setMemberCleared).not.toHaveBeenCalled();
+    });
+
+    it("rechaza si un admin desactivó el borrado de conversaciones", async () => {
+      vi.mocked(ConversationRepository.findActiveById).mockResolvedValue(
+        buildMockConversation({ members: [buildMockMember({ userId: "u-1" })] }),
+      );
+      vi.mocked(SettingsService.getSettings).mockResolvedValue({ allowConversationDelete: false } as any);
+
+      await expect(clearConversation("u-1", "conv-1")).rejects.toThrow(
+        "Conversation deletion is disabled by an administrator",
+      );
+      expect(ConversationRepository.setMemberCleared).not.toHaveBeenCalled();
     });
   });
 
@@ -635,6 +692,47 @@ describe("conversation.service", () => {
       expect(list[0].id).toBe("c-2"); // Pinned first
       expect(list[1].id).toBe("c-1");
       expect(list[0].unreadCount).toBe(3);
+    });
+
+    it("lo anterior al último vaciado no cuenta como no leído ni como último mensaje", async () => {
+      const lastRead = new Date("2026-01-01T10:00:00Z");
+      const cleared = new Date("2026-01-02T10:00:00Z");
+      const conv = buildMockConversation({
+        id: "c-1",
+        lastMessageId: "m-old",
+        lastMessageAt: new Date("2026-01-02T09:00:00Z"),
+        members: [buildMockMember({ userId: "u-1", lastReadAt: lastRead, clearedAt: cleared })],
+      });
+      vi.mocked(ConversationRepository.listForUser).mockResolvedValue([conv]);
+      vi.mocked(ConversationRepository.findLastMessagesByIds).mockResolvedValue([
+        { id: "m-old", type: MessageType.TEXT, content: "viejo", deletedAt: null, files: [] } as any,
+      ]);
+      vi.mocked(ConversationRepository.countUnread).mockResolvedValue(0);
+
+      const [item] = await listConversations("u-1");
+
+      // `since` es el más reciente entre última lectura y vaciado.
+      expect(ConversationRepository.countUnread).toHaveBeenCalledWith("c-1", "u-1", cleared);
+      expect(item.lastMessagePreview).toBeNull();
+    });
+
+    it("conserva el último mensaje si es posterior al vaciado", async () => {
+      const cleared = new Date("2026-01-02T10:00:00Z");
+      const conv = buildMockConversation({
+        id: "c-1",
+        lastMessageId: "m-new",
+        lastMessageAt: new Date("2026-01-03T09:00:00Z"),
+        members: [buildMockMember({ userId: "u-1", clearedAt: cleared })],
+      });
+      vi.mocked(ConversationRepository.listForUser).mockResolvedValue([conv]);
+      vi.mocked(ConversationRepository.findLastMessagesByIds).mockResolvedValue([
+        { id: "m-new", type: MessageType.TEXT, content: "nuevo", deletedAt: null, files: [] } as any,
+      ]);
+      vi.mocked(ConversationRepository.countUnread).mockResolvedValue(1);
+
+      const [item] = await listConversations("u-1");
+
+      expect(item.lastMessagePreview).not.toBeNull();
     });
   });
 

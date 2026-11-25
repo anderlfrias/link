@@ -53,6 +53,7 @@ export function useConversations(): UseConversationsResult {
       SOCKET_EVENTS.conversation.created,
       SOCKET_EVENTS.conversation.updated,
       SOCKET_EVENTS.conversation.deleted,
+      SOCKET_EVENTS.conversation.cleared,
       SOCKET_EVENTS.conversation.memberAdded,
       SOCKET_EVENTS.conversation.memberRemoved,
       SOCKET_EVENTS.conversation.memberPreferenceChanged,

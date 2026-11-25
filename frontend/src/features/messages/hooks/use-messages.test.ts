@@ -192,6 +192,36 @@ describe("useMessages", () => {
     expect(result.current.messages[0].files).toEqual([]);
   });
 
+  it("vacía los mensajes al llegar conversation:cleared de esta conversación", async () => {
+    const { result } = renderHook(() => useMessages("conv-1"));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.messages.length).toBeGreaterThan(0);
+
+    act(() => {
+      eventListeners[SOCKET_EVENTS.conversation.cleared]?.[0]?.({ conversationId: "conv-1" });
+    });
+
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("ignora conversation:cleared de otra conversación", async () => {
+    const { result } = renderHook(() => useMessages("conv-1"));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      eventListeners[SOCKET_EVENTS.conversation.cleared]?.[0]?.({ conversationId: "otra" });
+    });
+
+    expect(result.current.messages.length).toBeGreaterThan(0);
+  });
+
   it("advances receipts when socket receiptUpdated event arrives", async () => {
 
     const { result } = renderHook(() => useMessages("conv-1"));

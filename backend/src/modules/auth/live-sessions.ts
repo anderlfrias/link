@@ -3,6 +3,7 @@ import { getIO, isSocketReady } from "../../socket";
 import { disconnectUserSockets } from "../../socket/rooms";
 // El repositorio, no `push.service`: este último llama a `webpush.setVapidDetails`
 // al cargarse, y el CLI de administración también importa este archivo.
+import * as MobilePushRepository from "../push/mobile-push.repository";
 import * as PushRepository from "../push/push.repository";
 
 /// Da de baja todas las suscripciones push del usuario. Sin esto, sus
@@ -11,6 +12,7 @@ import * as PushRepository from "../push/push.repository";
 async function dropPushSubscriptions(userId: string): Promise<void> {
   try {
     await PushRepository.deleteByUserId(userId);
+    await MobilePushRepository.deleteByUserId(userId);
   } catch (error) {
     getLogger().warn({ err: error, userId }, "could not delete push subscriptions");
   }

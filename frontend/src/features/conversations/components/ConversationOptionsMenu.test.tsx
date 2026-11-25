@@ -118,6 +118,42 @@ describe("ConversationOptionsMenu", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("renders 'Vaciar chat' when onClearChat is provided and calls it", () => {
+    const onClose = vi.fn();
+    const onClearChat = vi.fn();
+
+    render(
+      <ConversationOptionsMenu
+        open={true}
+        onClose={onClose}
+        isPinned={false}
+        isFavorite={false}
+        onTogglePin={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onClearChat={onClearChat}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Vaciar chat/i }));
+    expect(onClearChat).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("no muestra 'Vaciar chat' si no se provee onClearChat", () => {
+    render(
+      <ConversationOptionsMenu
+        open={true}
+        onClose={vi.fn()}
+        isPinned={false}
+        isFavorite={false}
+        onTogglePin={vi.fn()}
+        onToggleFavorite={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Vaciar chat/i })).not.toBeInTheDocument();
+  });
+
   it("renders 'Eliminar grupo' when onDeleteGroup is provided", () => {
     const onClose = vi.fn();
     const onDeleteGroup = vi.fn();

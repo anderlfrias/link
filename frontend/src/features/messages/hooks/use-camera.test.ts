@@ -42,8 +42,7 @@ describe("useCamera", () => {
     expect(result.current.status).toBe("idle");
     expect(result.current.stream).toBeNull();
     expect(result.current.error).toBeNull();
-    expect(result.current.capturedBlob).toBeNull();
-    expect(result.current.capturedUrl).toBeNull();
+    expect(result.current.hasAudio).toBe(false);
     expect(result.current.facingMode).toBe("environment");
   });
 
@@ -149,59 +148,74 @@ describe("useCamera", () => {
     expect(result.current.stream).toBeNull();
   });
 
-  it("captures photo, stops live stream, and creates file upon confirmation", async () => {
+  it("captura una foto como File y deja la cámara encendida para sacar otra", async () => {
     const { result } = renderHook(() => useCamera());
 
     await act(async () => {
       await result.current.startCamera("user");
     });
 
-    // Mock video element
-    const mockVideo = {
-      videoWidth: 640,
-      videoHeight: 480,
-    } as HTMLVideoElement;
-
-    // Mock canvas 2D context
-    const mockContext = {
-      translate: vi.fn(),
-      scale: vi.fn(),
-      drawImage: vi.fn(),
-    };
+    const mockVideo = { videoWidth: 640, videoHeight: 480 } as HTMLVideoElement;
+    const mockContext = { translate: vi.fn(), scale: vi.fn(), drawImage: vi.fn() };
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(mockContext as any);
-
-    const mockBlob = new Blob(["fake-image-bytes"], { type: "image/jpeg" });
     HTMLCanvasElement.prototype.toBlob = vi.fn().mockImplementation((callback) => {
-      callback(mockBlob);
+      callback(new Blob(["fake-image-bytes"], { type: "image/jpeg" }));
     });
 
-    let capturedResult: Blob | null = null;
+    let first: File | null = null;
+    let second: File | null = null;
     await act(async () => {
-      capturedResult = await result.current.capture(mockVideo);
+      first = await result.current.capture(mockVideo);
+      second = await result.current.capture(mockVideo);
     });
 
-    expect(capturedResult).toBe(mockBlob);
-    expect(result.current.status).toBe("captured");
-    expect(result.current.capturedBlob).toBe(mockBlob);
-    expect(result.current.capturedUrl).toBe("blob:mock-camera-url");
-    // Camera stream stopped after capture
-    expect(result.current.stream).toBeNull();
-    expect(mockTrack.stop).toHaveBeenCalled();
-
-    // Confirm photo to File
-    const file = result.current.confirmPhoto("mi_foto.jpg");
-    expect(file).toBeInstanceOf(File);
-    expect(file?.name).toBe("mi_foto.jpg");
-    expect(file?.type).toBe("image/jpeg");
-
-    // Retake restarts camera
-    await act(async () => {
-      await result.current.retake();
-    });
-
+    expect(first).toBeInstanceOf(File);
+    expect((first as unknown as File).type).toBe("image/jpeg");
+    expect((first as unknown as File).name).toMatch(/^foto_camara_\d+\.jpg$/);
+    expect(second).toBeInstanceOf(File);
+    // Sigue en vivo: no se apagó el stream ni se pasó a un estado de revisión.
     expect(result.current.status).toBe("ready");
-    expect(result.current.capturedBlob).toBeNull();
-    expect(result.current.capturedUrl).toBeNull();
+    expect(result.current.stream).toBe(mockStream);
+    expect(mockTrack.stop).not.toHaveBeenCalled();
+  });
+
+  it("capture devuelve null si el visor todavía no tiene imagen", async () => {
+    const { result } = renderHook(() => useCamera());
+
+    let file: File | null = {} as File;
+    await act(async () => {
+      file = await result.current.capture({ videoWidth: 0, videoHeight: 0 } as HTMLVideoElement);
+    });
+
+    expect(file).toBeNull();
+  });
+
+  it("pide micrófono solo cuando se indica, y lo recuerda al cambiar de cámara", async () => {
+    const audioTrack = { stop: vi.fn(), getSettings: vi.fn().mockReturnValue({}) };
+    const streamWithAudio = {
+      getTracks: () => [mockTrack, audioTrack],
+      getVideoTracks: () => [mockTrack],
+      getAudioTracks: () => [audioTrack],
+    };
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue(streamWithAudio as any);
+    const { result } = renderHook(() => useCamera());
+
+    await act(async () => {
+      await result.current.startCamera("environment", undefined, true);
+    });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(expect.objectContaining({ audio: true }));
+    expect(result.current.hasAudio).toBe(true);
+
+    // switchCamera no vuelve a indicar nada: se conserva el audio.
+    await act(async () => {
+      await result.current.switchCamera();
+    });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(expect.objectContaining({ audio: true }));
+
+    await act(async () => {
+      await result.current.startCamera("environment", undefined, false);
+    });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(expect.objectContaining({ audio: false }));
   });
 
   it("recorta la foto exactamente al encuadre visible (WYSIWYG) si el visor tiene distinta relación de aspecto que el sensor", async () => {

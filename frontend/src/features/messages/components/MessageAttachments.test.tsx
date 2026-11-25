@@ -166,4 +166,88 @@ describe("MessageAttachments", () => {
     expect(titleEl).toHaveAttribute("title", veryLongName);
     expect(container.firstChild).toHaveClass("min-w-0", "max-w-full");
   });
+
+  describe("agrupado de fotos y videos", () => {
+    function mediaFile(index: number, mimeType = "image/jpeg"): MessageFile {
+      const ext = mimeType.startsWith("video/") ? "mp4" : "jpg";
+      return {
+        id: `mf-${index}`,
+        messageId: "m-1",
+        fileId: `f-${index}`,
+        createdAt: "2026-09-09T10:00:00Z",
+        file: {
+          id: `f-${index}`,
+          originalName: `archivo${index}.${ext}`,
+          mimeType,
+          extension: ext,
+          size: 1024,
+          url: `/api/v1/files/f-${index}/content?t=h${index}`,
+          deletedAt: null,
+        } as any,
+      };
+    }
+
+    it("hasta 3 fotos NO se agrupan: cada una va en línea como siempre", () => {
+      render(<MessageAttachments files={[mediaFile(1), mediaFile(2), mediaFile(3)]} isOwn={false} />);
+
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+      expect(screen.getAllByRole("button")).toHaveLength(3);
+    });
+
+    it("4 fotos se agrupan en una cuadrícula con todas las miniaturas y sin '+N'", () => {
+      render(<MessageAttachments files={[1, 2, 3, 4].map((i) => mediaFile(i))} isOwn={false} />);
+
+      expect(screen.getByRole("group", { name: "4 fotos y videos" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button")).toHaveLength(4);
+      expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+    });
+
+    it("con más de 4 muestra 4 miniaturas y '+N' en la última", () => {
+      render(<MessageAttachments files={[1, 2, 3, 4, 5, 6, 7].map((i) => mediaFile(i))} isOwn={false} />);
+
+      expect(screen.getAllByRole("button")).toHaveLength(4);
+      expect(screen.getByText("+3")).toBeInTheDocument();
+    });
+
+    it("tocar una miniatura abre el visor sobre todo el grupo, incluidas las que no se ven", () => {
+      render(<MessageAttachments files={[1, 2, 3, 4, 5, 6].map((i) => mediaFile(i))} isOwn={false} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Ver imagen archivo2.jpg" }));
+
+      expect(mockOpenLightbox).toHaveBeenCalledTimes(1);
+      const [item, album] = mockOpenLightbox.mock.calls[0];
+      expect(item.name).toBe("archivo2.jpg");
+      expect(album).toHaveLength(6);
+    });
+
+    it("los videos se agrupan con las fotos y se marcan como video en el visor", () => {
+      const files = [mediaFile(1), mediaFile(2, "video/mp4"), mediaFile(3), mediaFile(4)];
+      render(<MessageAttachments files={files} isOwn={false} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Ver video archivo2.mp4" }));
+
+      const [item, album] = mockOpenLightbox.mock.calls[0];
+      expect(item.kind).toBe("video");
+      expect(album.map((entry: { kind: string }) => entry.kind)).toEqual(["image", "video", "image", "image"]);
+    });
+
+    it("los archivos que no son fotos ni videos quedan fuera de la cuadrícula", () => {
+      const doc = {
+        ...mediaFile(9, "application/pdf"),
+        id: "mf-doc",
+        file: { ...mediaFile(9, "application/pdf").file, originalName: "informe.pdf" },
+      } as MessageFile;
+      render(<MessageAttachments files={[...[1, 2, 3, 4].map((i) => mediaFile(i)), doc]} isOwn={false} />);
+
+      expect(screen.getByRole("group", { name: "4 fotos y videos" })).toBeInTheDocument();
+      expect(screen.getByText("informe.pdf")).toBeInTheDocument();
+    });
+
+    it("las fotos eliminadas no cuentan para agrupar", () => {
+      const deleted = { ...mediaFile(4), file: { ...mediaFile(4).file, deletedAt: "2026-09-09T11:00:00Z" } } as MessageFile;
+      render(<MessageAttachments files={[mediaFile(1), mediaFile(2), mediaFile(3), deleted]} isOwn={false} />);
+
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+    });
+  });
 });

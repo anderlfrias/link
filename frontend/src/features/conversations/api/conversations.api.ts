@@ -75,6 +75,14 @@ export function deleteConversation(
   return apiRequest(`${BASE_PATH}/${conversationId}`, { method: "DELETE", token });
 }
 
+/** `POST /:id/clear` — "Vaciar chat": elimina el historial solo para quien lo pide. */
+export function clearConversation(
+  token: string,
+  conversationId: string,
+): Promise<{ conversationId: string }> {
+  return apiRequest(`${BASE_PATH}/${conversationId}/clear`, { method: "POST", token });
+}
+
 export function setMemberAdmin(
   token: string,
   conversationId: string,

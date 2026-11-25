@@ -12,6 +12,7 @@ import { CONVERSATION_EVENTS } from "../conversations/conversation.socket";
 import { ConversationMemberWithUser, ConversationWithMembers, MessageReceipt } from "../conversations/conversation.types";
 import * as FileRepository from "../files/file.repository";
 import { toStoredFileResponse } from "../files/file.service";
+import * as MobilePushService from "../push/mobile-push.service";
 import * as PushService from "../push/push.service";
 import * as SettingsService from "../settings/settings.service";
 import { getLogger } from "../../config/request-context";
@@ -309,6 +310,8 @@ async function createAndDeliverMessage(
   if (offlineMemberIds.length > 0) {
     const preview = buildLastMessagePreview(message);
     const isGroup = conversation.type === ConversationType.GROUP;
+    // App móvil: aviso genérico, sin texto ni nombres (ver push/mobile-push.service.ts).
+    void MobilePushService.notifyNewMessage(offlineMemberIds, conversationId);
     void PushService.notifyUsers(offlineMemberIds, {
       title: isGroup ? (conversation.name ?? "Grupo") : message.sender.name,
       body: isGroup ? `${message.sender.name}: ${preview}` : preview,
@@ -512,10 +515,12 @@ export async function listMessages(
   const conversation = await assertMembership(conversationId, currentUserId);
 
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const clearedAt = conversation.members.find((member) => member.userId === currentUserId)?.clearedAt ?? null;
   const messages = await MessageRepository.listMessages(conversationId, {
     beforeId: options.beforeId,
     limit,
     query: options.query,
+    clearedAt,
   });
   const ordered = messages.reverse();
 
@@ -543,10 +548,11 @@ export async function listConversationFiles(
   conversationId: string,
   options: ListConversationFilesOptions,
 ): Promise<ConversationFileResponse[]> {
-  await assertMembership(conversationId, currentUserId);
+  const conversation = await assertMembership(conversationId, currentUserId);
 
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
-  const entries = await MessageRepository.listFiles(conversationId, { beforeId: options.beforeId, limit });
+  const clearedAt = conversation.members.find((member) => member.userId === currentUserId)?.clearedAt ?? null;
+  const entries = await MessageRepository.listFiles(conversationId, { beforeId: options.beforeId, limit, clearedAt });
 
   return entries.map((entry) => ({
     ...toStoredFileResponse(entry.file, currentUserId),
